@@ -1,198 +1,202 @@
-"""
-fn_notificar/__init__.py
-Envia push notification al tecnico via Graph API
-y alerta en Teams al supervisor con botones Aprobar/Rechazar.
-Roles: Tecnico, Supervisor
-"""
-import json, logging, os
-from datetime import datetime, timezone
 import azure.functions as func
-import requests
-from azure.identity import DefaultAzureCredential
-import sys
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
-from shared.auth import require_auth
+import json
+import logging
+from datetime import datetime, timezone
+
+from ..shared.auth import require_auth, get_secret
 
 logger = logging.getLogger(__name__)
-GRAPH_API_BASE = os.environ.get("GRAPH_API_BASE", "https://graph.microsoft.com/v1.0")
-TEAMS_TEAM_ID = os.environ.get("TEAMS_TEAM_ID", "")
-TEAMS_CHANNEL_ID = os.environ.get("TEAMS_CHANNEL_ID", "")
-TEAMS_WEBHOOK_SUPERVISORES = os.environ.get("TEAMS_WEBHOOK_SUPERVISORES", "")
-FUNCTIONS_APP_NAME = os.environ.get("FUNCTIONS_APP_NAME", "multitel-reportes-fn")
 
-def _get_graph_token():
-      cred = DefaultAzureCredential()
-      return cred.get_token("https://graph.microsoft.com/.default").token
 
-def _enviar_teams_adaptive_card(reporte_id, cliente, tecnico_nombre, url_pptx, url_pdf, tipo_reporte):
-      """Envia Adaptive Card a Teams con botones Aprobar/Rechazar."""
-      approve_url = f"https://{FUNCTIONS_APP_NAME}.azurewebsites.net/api/fn_aprobar"
-      tipo_label = "Planta Externa" if tipo_reporte == "planta_externa" else "CPE"
-      card = {
-          "type": "message",
-          "attachments": [{
-              "contentType": "application/vnd.microsoft.card.adaptive",
-              "contentUrl": None,
-              "content": {
-                  "$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
-                  "type": "AdaptiveCard",
-                  "version": "1.4",
-                  "body": [
-                      {
-                          "type": "TextBlock",
-                          "size": "Medium",
-                          "weight": "Bolder",
-                          "text": f"Nuevo Reporte {tipo_label} — Aprobacion Requerida",
-                          "color": "Accent"
-                      },
-                      {
-                          "type": "FactSet",
-                          "facts": [
-                              {"title": "Cliente:", "value": cliente},
-                              {"title": "Tecnico:", "value": tecnico_nombre},
-                              {"title": "Reporte ID:", "value": reporte_id},
-                              {"title": "Tipo:", "value": tipo_label},
-                              {"title": "Fecha:", "value": datetime.now(timezone.utc).strftime("%d/%m/%Y %H:%M CST")},
-                          ]
-                      },
-                      {
-                          "type": "ActionSet",
-                          "actions": [
-                              {
-                                  "type": "Action.OpenUrl",
-                                  "title": "Ver PPTX",
-                                  "url": url_pptx,
-                                  "style": "default"
-                              },
-                              {
-                                  "type": "Action.OpenUrl",
-                                  "title": "Ver PDF",
-                                  "url": url_pdf or url_pptx,
-                                  "style": "default"
-                              },
-                          ]
-                      },
-                      {
-                          "type": "ActionSet",
-                          "actions": [
-                              {
-                                  "type": "Action.Http",
-                                  "title": "Aprobar",
-                                  "method": "POST",
-                                  "url": approve_url,
-                                  "body": json.dumps({"reporte_id": reporte_id, "accion": "aprobar"}),
-                                  "style": "positive"
-                              },
-                              {
-                                  "type": "Action.Http",
-                                  "title": "Rechazar",
-                                  "method": "POST",
-                                  "url": approve_url,
-                                  "body": json.dumps({"reporte_id": reporte_id, "accion": "rechazar"}),
-                                  "style": "destructive"
-                              }
-                          ]
-                      }
-                  ]
-              }
-          }]
-      }
-      if TEAMS_WEBHOOK_SUPERVISORES:
-                h = {"Content-Type": "application/json"}
-                r = requests.post(TEAMS_WEBHOOK_SUPERVISORES, headers=h, json=card, timeout=30)
-                r.raise_for_status()
-                return True
-            if TEAMS_TEAM_ID and TEAMS_CHANNEL_ID:
-                      token = _get_graph_token()
-                      h = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
-                      url = f"{GRAPH_API_BASE}/teams/{TEAMS_TEAM_ID}/channels/{TEAMS_CHANNEL_ID}/messages"
-                      r = requests.post(url, headers=h, json=card, timeout=30)
-                      r.raise_for_status()
-                      return True
-                  logger.warning("No hay configuracion de Teams disponible.")
-    return False
-
-def _notificar_tecnico_graph(tecnico_upn, reporte_id, mensaje):
-      """Envia notificacion push al tecnico via Graph API Chat."""
+def _write_audit_log(
+    reporte_id: str,
+    sistema: str,
+    accion: str,
+    resultado: str,
+    detalles: str = "",
+) -> None:
+    """Write audit entry to SharePoint via Graph API."""
     try:
-              token = _get_graph_token()
-              h = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
-              url = f"{GRAPH_API_BASE}/users/{tecnico_upn}/teamwork/installedApps"
-              r = requests.get(url, headers=h, timeout=30)
-              if r.status_code != 200:
-                            logger.warning(f"No se pudo obtener apps del tecnico {tecnico_upn}: {r.status_code}")
-                            return False
-                        chat_url = f"{GRAPH_API_BASE}/chats"
-        chat_body = {
-                      "chatType": "oneOnOne",
-                      "members": [
-                                        {
-                                                              "@odata.type": "#microsoft.graph.aadUserConversationMember",
-                                                              "roles": ["owner"],
-                                                              "user@odata.bind": f"https://graph.microsoft.com/v1.0/users/{tecnico_upn}",
-                                        }
-                      ]
+        import httpx
+        from azure.identity import DefaultAzureCredential
+
+        cred = DefaultAzureCredential()
+        graph_token = cred.get_token("https://graph.microsoft.com/.default").token
+        sharepoint_site_id = get_secret("SHAREPOINT_SITE_ID")
+        audit_list_id = get_secret("SHAREPOINT_AUDIT_LIST_ID")
+
+        entry = {
+            "fields": {
+                "Title": f"[{accion}] {reporte_id}",
+                "ReporteId": reporte_id,
+                "Usuario": sistema,
+                "Accion": accion,
+                "Resultado": resultado,
+                "Detalles": detalles[:500] if detalles else "",
+                "Timestamp": datetime.now(timezone.utc).isoformat(),
+            }
         }
-        chat_r = requests.post(chat_url, headers=h, json=chat_body, timeout=30)
-        if chat_r.status_code not in (200, 201):
-                      logger.warning(f"No se pudo crear chat con tecnico: {chat_r.status_code}")
-                      return False
-                  chat_id = chat_r.json().get("id")
-        msg_body = {
-                      "body": {
-                                        "content": f"Tu reporte <b>{reporte_id}</b> ha sido enviado para aprobacion.<br/>{mensaje}",
-                                        "contentType": "html"
-                      }
+
+        httpx.post(
+            f"https://graph.microsoft.com/v1.0/sites/{sharepoint_site_id}"
+            f"/lists/{audit_list_id}/items",
+            headers={
+                "Authorization": f"Bearer {graph_token}",
+                "Content-Type": "application/json",
+            },
+            json=entry,
+            timeout=10.0,
+        )
+    except Exception as exc:
+        logger.warning("audit_log_write_failed accion=%s err=%s", accion, exc)
+
+
+def _send_email_notification(
+    graph_token: str,
+    tecnico_email: str,
+    reporte_id: str,
+    pptx_url: str,
+    pdf_url: str,
+) -> None:
+    """Send email to technician via Graph API sendMail endpoint."""
+    import httpx
+
+    payload = {
+        "message": {
+            "subject": f"Reporte {reporte_id} generado exitosamente",
+            "body": {
+                "contentType": "HTML",
+                "content": (
+                    f"<p>Tu reporte <strong>{reporte_id}</strong> fue generado."
+                    f"</p><p>"
+                    f'<a href="{pptx_url}">Descargar PPTX</a> &nbsp;|&nbsp; '
+                    f'<a href="{pdf_url}">Descargar PDF</a>'
+                    f"</p>"
+                ),
+            },
+            "toRecipients": [{"emailAddress": {"address": tecnico_email}}],
         }
-        msg_url = f"{GRAPH_API_BASE}/chats/{chat_id}/messages"
-        msg_r = requests.post(msg_url, headers=h, json=msg_body, timeout=30)
-        msg_r.raise_for_status()
-        return True
-except Exception as e:
-        logger.warning(f"Error notificando al tecnico: {e}")
-        return False
+    }
 
-def _actualizar_estado_dataverse(reporte_id, estado):
-      try:
-                from azure.identity import DefaultAzureCredential
-                dataverse_url = os.environ["DATAVERSE_URL"]
-                cred = DefaultAzureCredential()
-                token = cred.get_token(f"{dataverse_url}/.default").token
-                entity = os.environ.get("DATAVERSE_ENTITY_REPORTES", "multitel_reportes")
-                h = {"Authorization": f"Bearer {token}", "Content-Type": "application/json",
-                     "OData-MaxVersion": "4.0", "OData-Version": "4.0", "If-Match": "*"}
-                body = {"multitel_estado": estado, "multitel_fechanotificacion": datetime.now(timezone.utc).isoformat()}
-                r = requests.patch(f"{dataverse_url}/api/data/v9.2/{entity}s({reporte_id})", headers=h, json=body, timeout=30)
-                r.raise_for_status()
-except Exception as e:
-        logger.warning(f"No se pudo actualizar estado en Dataverse: {e}")
+    resp = httpx.post(
+        f"https://graph.microsoft.com/v1.0/users/{tecnico_email}/sendMail",
+        headers={
+            "Authorization": f"Bearer {graph_token}",
+            "Content-Type": "application/json",
+        },
+        json=payload,
+        timeout=15.0,
+    )
+    resp.raise_for_status()
 
-@require_auth(required_roles=["Tecnico", "Supervisor"])
-def main(req: func.HttpRequest) -> func.HttpResponse:
-      logger.info("fn_notificar invocado.")
+
+def _send_teams_approval_card(
+    pa_webhook: str,
+    reporte_id: str,
+    tecnico_email: str,
+    pptx_url: str,
+    pdf_url: str,
+) -> None:
+    """
+    POST to Power Automate webhook which triggers an Adaptive Card in Teams
+    with Aprobar / Rechazar buttons for the supervisor.
+    """
+    import httpx
+
+    resp = httpx.post(
+        pa_webhook,
+        json={
+            "reporte_id": reporte_id,
+            "tecnico_email": tecnico_email,
+            "pptx_url": pptx_url,
+            "pdf_url": pdf_url,
+            "accion": "REPORTE_LISTO_PARA_APROBACION",
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        },
+        timeout=15.0,
+    )
+    resp.raise_for_status()
+
+
+# ---------------------------------------------------------------------------
+# Azure Function entry point
+# ---------------------------------------------------------------------------
+
+def main(req: func.HttpRequest, **kwargs) -> func.HttpResponse:
+    """
+    POST /api/notificar
+    Internal endpoint — called by fn_generar_pptx orchestrator after files
+    are uploaded to OneDrive.  No user-facing RBAC (sistema call), but
+    validates a shared function key from Key Vault.
+
+    Body: { reporte_id, tecnico_email, pptx_url, pdf_url }
+    """
+    # Validate internal function key (not Azure AD — this is a system-to-system call)
+    expected_key = get_secret("FN_NOTIFICAR_KEY")
+    provided_key = req.headers.get("x-functions-key", "")
+    if provided_key != expected_key:
+        logger.warning("notificar_unauthorized attempt from %s", req.headers.get("x-forwarded-for", "unknown"))
+        return func.HttpResponse(
+            json.dumps({"error": "Unauthorized"}),
+            status_code=401,
+            mimetype="application/json",
+        )
+
     try:
-              body = req.get_json()
-except ValueError:
-        return func.HttpResponse('{"error":"Body JSON invalido."}', status_code=400, mimetype="application/json")
-    reporte_id = body.get("reporte_id")
-    cliente = body.get("cliente", "")
-    tecnico_nombre = body.get("tecnico_nombre", "")
-    tecnico_upn = body.get("tecnico_upn", "")
-    url_pptx = body.get("url_pptx", "")
-    url_pdf = body.get("url_pdf", "")
-    tipo_reporte = body.get("tipo_reporte", "planta_externa")
-    if not reporte_id:
-              return func.HttpResponse('{"error":"reporte_id requerido."}', status_code=400, mimetype="application/json")
-    results = {"reporte_id": reporte_id, "teams_notificado": False, "tecnico_notificado": False}
+        body = req.get_json()
+    except ValueError:
+        return func.HttpResponse(
+            json.dumps({"error": "Payload JSON inválido"}),
+            status_code=400,
+            mimetype="application/json",
+        )
+
+    reporte_id = body.get("reporte_id", "")
+    tecnico_email = body.get("tecnico_email", "")
+    pptx_url = body.get("pptx_url", "")
+    pdf_url = body.get("pdf_url", "")
+
+    if not all([reporte_id, tecnico_email]):
+        return func.HttpResponse(
+            json.dumps({"error": "reporte_id y tecnico_email son requeridos"}),
+            status_code=400,
+            mimetype="application/json",
+        )
+
+    from azure.identity import DefaultAzureCredential
+    cred = DefaultAzureCredential()
+    graph_token = cred.get_token("https://graph.microsoft.com/.default").token
+
+    errors = []
+
+    # ---- Email notification to technician ----
     try:
-              results["teams_notificado"] = _enviar_teams_adaptive_card(
-                  reporte_id, cliente, tecnico_nombre, url_pptx, url_pdf, tipo_reporte)
-except Exception as e:
-        logger.error(f"Error Teams: {e}", exc_info=True)
-        results["teams_error"] = str(e)
-    if tecnico_upn:
-              mensaje = f"Reporte enviado para aprobacion. Cliente: {cliente}"
-        results["tecnico_notificado"] = _notificar_tecnico_graph(tecnico_upn, reporte_id, mensaje)
-    _actualizar_estado_dataverse(reporte_id, "notificado")
-    results["timestamp"] = datetime.now(timezone.utc).isoformat()
-    return func.HttpResponse(json.dumps(results), status_code=200, mimetype="application/json")
+        _send_email_notification(graph_token, tecnico_email, reporte_id, pptx_url, pdf_url)
+        logger.info("email_sent reporte_id=%s to=%s", reporte_id, tecnico_email)
+    except Exception as exc:
+        logger.error("email_send_failed reporte_id=%s err=%s", reporte_id, exc)
+        errors.append(f"email: {exc}")
+
+    # ---- Teams Adaptive Card with Aprobar/Rechazar buttons ----
+    try:
+        pa_webhook = get_secret("POWER_AUTOMATE_APPROVAL_WEBHOOK")
+        _send_teams_approval_card(pa_webhook, reporte_id, tecnico_email, pptx_url, pdf_url)
+        logger.info("teams_card_sent reporte_id=%s", reporte_id)
+    except Exception as exc:
+        logger.error("teams_card_failed reporte_id=%s err=%s", reporte_id, exc)
+        errors.append(f"teams: {exc}")
+
+    # ---- Audit log ----
+    resultado = "ERROR: " + "; ".join(errors) if errors else "OK"
+    _write_audit_log(reporte_id, "sistema", "NOTIFICAR", resultado)
+
+    status = 207 if errors else 200
+    return func.HttpResponse(
+        json.dumps({
+            "reporte_id": reporte_id,
+            "notificaciones_enviadas": not bool(errors),
+            "errors": errors,
+        }),
+        status_code=status,
+        mimetype="application/json",
+    )
