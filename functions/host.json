@@ -1,0 +1,53 @@
+{
+  "version": "2.0",
+    "logging": {
+        "applicationInsights": {
+              "samplingSettings": {
+                      "isEnabled": true,
+                              "excludedTypes": "Request"
+                                    }
+                                        },
+                                            "logLevel": {
+                                                  "default": "Information",
+                                                        "Host.Results": "Error",
+                                                              "Function": "Information",
+                                                                    "Host.Aggregator": "Trace"
+                                                                        }
+                                                                          },
+                                                                            "functionTimeout": "00:10:00",
+                                                                              "extensions": {
+                                                                                  "durableTask": {
+                                                                                        "hubName": "MultitelReportesDH",
+                                                                                              "storageProvider": {
+                                                                                                      "connectionStringName": "AzureWebJobsStorage",
+                                                                                                              "controlQueueBufferThreshold": 256,
+                                                                                                                      "controlQueueVisibilityTimeout": "00:05:00",
+                                                                                                                              "maxQueuePollingInterval": "00:00:30",
+                                                                                                                                      "partitionCount": 4,
+                                                                                                                                              "trackingStoreConnectionStringName": "AzureWebJobsStorage",
+                                                                                                                                                      "useLegacyPartitionManagement": false
+                                                                                                                                                            },
+                                                                                                                                                                  "maxConcurrentActivityFunctions": 10,
+                                                                                                                                                                        "maxConcurrentOrchestratorFunctions": 5,
+                                                                                                                                                                              "maxOrchestrationActions": 100000
+                                                                                                                                                                                  },
+                                                                                                                                                                                      "http": {
+                                                                                                                                                                                            "routePrefix": "api",
+                                                                                                                                                                                                  "maxOutstandingRequests": 200,
+                                                                                                                                                                                                        "maxConcurrentRequests": 100,
+                                                                                                                                                                                                              "dynamicThrottlesEnabled": true
+                                                                                                                                                                                                                  }
+                                                                                                                                                                                                                    },
+                                                                                                                                                                                                                      "retry": {
+                                                                                                                                                                                                                          "strategy": "fixedDelay",
+                                                                                                                                                                                                                              "maxRetryCount": 3,
+                                                                                                                                                                                                                                  "delayInterval": "00:00:05"
+                                                                                                                                                                                                                                    },
+                                                                                                                                                                                                                                      "healthMonitor": {
+                                                                                                                                                                                                                                          "enabled": true,
+                                                                                                                                                                                                                                              "healthCheckInterval": "00:00:10",
+                                                                                                                                                                                                                                                  "healthCheckWindow": "00:02:00",
+                                                                                                                                                                                                                                                      "healthCheckThreshold": 6,
+                                                                                                                                                                                                                                                          "counterThreshold": 0.80
+                                                                                                                                                                                                                                                            }
+                                                                                                                                                                                                                                                            }
