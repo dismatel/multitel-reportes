@@ -1,0 +1,58 @@
+{
+  "cli": {
+    "version": ">= 5.9.0",
+    "requireCommit": true,
+    "appVersionSource": "local"
+  },
+  "build": {
+    "development": {
+      "developmentClient": true,
+      "distribution": "internal",
+      "android": {
+        "buildType": "apk",
+        "gradleCommand": ":app:assembleDebug"
+      }
+    },
+    "preview": {
+      "distribution": "internal",
+      "android": {
+        "buildType": "apk",
+        "gradleCommand": ":app:assembleRelease"
+      },
+      "env": {
+        "EXPO_PUBLIC_APP_ENV": "preview"
+      }
+    },
+    "production": {
+      "distribution": "store",
+      "android": {
+        "buildType": "app-bundle",
+        "gradleCommand": ":app:bundleRelease",
+        "enableProguardInReleaseBuilds": true,
+        "enableShrinkResourcesInReleaseBuilds": true,
+        "keystore": {
+          "keystorePath": "multitel-release.keystore",
+          "keystorePassword": {
+            "fromEnv": "ANDROID_KEYSTORE_PASSWORD"
+          },
+          "keyAlias": "multitel-key",
+          "keyPassword": {
+            "fromEnv": "ANDROID_KEY_PASSWORD"
+          }
+        }
+      },
+      "env": {
+        "EXPO_PUBLIC_APP_ENV": "production"
+      },
+      "autoIncrement": "buildNumber"
+    }
+  },
+  "submit": {
+    "production": {
+      "android": {
+        "serviceAccountKeyPath": "../google-play-service-account.json",
+        "track": "internal"
+      }
+    }
+  }
+}
