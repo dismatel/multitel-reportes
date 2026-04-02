@@ -1,0 +1,54 @@
+# ===========================
+# Multitel Reportes .gitignore
+# ===========================
+
+# Node / React Native / Expo
+node_modules/
+.expo/
+dist/
+build/
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+*.orig.*
+web-build/
+.expo-shared/
+
+# Android
+app/android/app/build/
+app/android/.gradle/
+app/android/local.properties
+app/android/*.keystore
+app/android/app/google-services.json
+
+# Python / Azure Functions
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+functions/.python_packages/
+functions/__pycache__/
+functions/.venv/
+venv/
+ENV/
+.env
+*.env
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+*.log
+
+# Secrets
+scripts/.env
+*.pem
+secrets/
