@@ -1,0 +1,140 @@
+# .github/workflows/test.yml
+# Runs pytest (Azure Functions) + Jest (React Native app) on every PR.
+# PR is blocked if any test fails.
+
+name: Test Suite
+
+on:
+  pull_request:
+    branches: [main, develop]
+  push:
+    branches: [develop]
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Python tests — Azure Functions
+  # ---------------------------------------------------------------------------
+  pytest:
+    name: pytest (Azure Functions)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: functions
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Cache pip
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('functions/requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest pytest-cov pytest-mock
+
+      - name: Run pytest
+        env:
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          ALLOWED_EMAIL_DOMAIN: multitel.com
+          DATAVERSE_URL: https://test.crm.dynamics.com
+          SHAREPOINT_SITE_ID: test-site-id
+          TEAMS_WEBHOOK_SUPERVISORES: https://test.webhook.url
+        run: |
+          pytest tests/ \
+            --cov=. \
+            --cov-report=xml \
+            --cov-report=term-missing \
+            -v
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v4
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: functions/coverage.xml
+          flags: functions
+          fail_ci_if_error: false
+
+  # ---------------------------------------------------------------------------
+  # JavaScript tests — React Native app
+  # ---------------------------------------------------------------------------
+  jest:
+    name: Jest (React Native App)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: app
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: app/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: TypeScript check
+        run: npx tsc --noEmit
+
+      - name: Run Jest
+        run: npx jest \
+          --coverage \
+          --coverageReporters=lcov \
+          --passWithNoTests \
+          --forceExit
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v4
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: app/coverage/lcov.info
+          flags: app
+          fail_ci_if_error: false
+
+  # ---------------------------------------------------------------------------
+  # CodeQL security analysis
+  # ---------------------------------------------------------------------------
+  codeql:
+    name: CodeQL Analysis
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write
+      actions: read
+      contents: read
+
+    strategy:
+      fail-fast: false
+      matrix:
+        language: [python, javascript]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: ${{ matrix.language }}
+
+      - name: Autobuild
+        uses: github/codeql-action/autobuild@v3
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: '/language:${{ matrix.language }}'
