@@ -19,6 +19,7 @@ import logging
 import functools
 import hashlib
 import time
+import asyncio
 import threading
 from typing import Callable, List, Optional
 
@@ -43,6 +44,25 @@ ISSUER = f"https://login.microsoftonline.com/{TENANT_ID}/v2.0"
 
 # PyJWKClient handles key caching and rotation automatically (cache_keys=True by default).
 # It fetches JWKS on first use and refreshes when a kid is not found.
+# FIX [M-3]: Added threading.Lock to protect _jwks_client re-initialization
+# in case of concurrent Azure Function workers (TOCTOU race condition).
+# asyncio.Lock() is also provided for async callers.
+_jwks_client_lock = threading.Lock()
+_jwks_client_async_lock: asyncio.Lock | None = None  # Lazy-init per event loop
+
+
+def _get_jwks_async_lock() -> asyncio.Lock:
+    """Return a per-event-loop asyncio.Lock for JWKS operations."""
+    global _jwks_client_async_lock
+    try:
+        loop = asyncio.get_event_loop()
+    except RuntimeError:
+        loop = asyncio.new_event_loop()
+    if _jwks_client_async_lock is None or _jwks_client_async_lock._loop is not loop:
+        _jwks_client_async_lock = asyncio.Lock()
+    return _jwks_client_async_lock
+
+
 _jwks_client = PyJWKClient(JWKS_URL, cache_keys=True, lifespan=3600)
 
 # ---------------------------------------------------------------------------
@@ -97,10 +117,17 @@ def get_secret(secret_name: str) -> str:
             f"Secret '{secret_name}' not found in env and AZURE_KEYVAULT_URL is not set"
         )
     try:
-        from azure.identity import DefaultAzureCredential
+        from azure.identity import ManagedIdentityCredential, DefaultAzureCredential
         from azure.keyvault.secrets import SecretClient
 
-        cred = DefaultAzureCredential()
+        # FIX [M-7]: Prefer ManagedIdentityCredential with explicit client_id to avoid
+        # ambiguity when the Function App has multiple user-assigned identities.
+        _mi_client_id = os.environ.get("MANAGED_IDENTITY_CLIENT_ID", "")
+        cred = (
+            ManagedIdentityCredential(client_id=_mi_client_id)
+            if _mi_client_id
+            else DefaultAzureCredential()
+        )
         client = SecretClient(vault_url=vault_url, credential=cred)
         fetched = client.get_secret(secret_name).value or ""
 
