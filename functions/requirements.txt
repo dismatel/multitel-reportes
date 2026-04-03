@@ -1,18 +1,41 @@
+# Azure Functions core
 azure-functions==1.17.0
+
+# Azure SDK
 azure-identity==1.18.0
-azure-mgmt-resource==23.1.1
+azure-storage-blob==12.23.0
+azure-keyvault-secrets==4.8.0
+
+# Durable Functions — REQUIRED for fn_generar_pptx orchestration
+# FIX [CRÍTICO-1]: Faltaba en requirements.txt — causa ModuleNotFoundError en producción
+azure-durable-functions==1.2.4
+
+# Microsoft Graph / MSAL
+# FIX [CRÍTICO-4]: Se elimina python-jose (CVE-2024-33663, bypass de firma JWT)
+# Se usa PyJWT de forma consistente en shared/auth.py
 msal==1.31.0
-requests==2.32.3
-python-pptx==1.0.2
-Pillow==10.4.0
-cryptography==43.0.3
-pydantic==2.9.2
 PyJWT==2.9.0
+msgraph-core==1.1.0
+
+# HTTP clients
+requests==2.32.3
 httpx==0.27.2
 aiohttp==3.10.10
-azure-storage-blob==12.23.0
-python-jose[cryptography]==3.3.0
+
+# PPTX generation
+python-pptx==1.0.2
+Pillow==10.4.0
+
+# Validation & serialization
+pydantic==2.9.2
+
+# Cryptography
+cryptography==43.0.3
+
+# Google Play Integrity
 google-auth==2.35.0
 google-auth-httplib2==0.2.0
-msgraph-core==1.1.0
-azure-keyvault-secrets==4.8.0
+
+# NOTE: azure-mgmt-resource==23.1.1 eliminado — no se usa en ninguna function
+# y añadía ~40MB al paquete de deploy, aumentando cold start.
+# Si se necesita en el futuro, agregar de vuelta con version pinneada.
