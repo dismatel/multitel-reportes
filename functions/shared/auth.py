@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 TENANT_ID = os.environ.get("AZURE_TENANT_ID", "")
 CLIENT_ID = os.environ.get("AZURE_CLIENT_ID", "")
-ALLOWED_DOMAIN = os.environ.get("ALLOWED_EMAIL_DOMAIN", "multitel.com")
+ALLOWED_DOMAIN = os.environ.get("ALLOWED_EMAIL_DOMAIN", "grupomultitel.com")
 PLAY_INTEGRITY_PACKAGE = os.environ.get("ANDROID_PACKAGE_NAME", "com.multitel.reportes")
 
 JWKS_URL = f"https://login.microsoftonline.com/{TENANT_ID}/discovery/v2.0/keys"
