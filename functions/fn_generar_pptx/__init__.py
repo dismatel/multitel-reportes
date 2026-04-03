@@ -378,7 +378,7 @@ def _update_sha256_dataverse(reporte_id: str, sha256: str) -> None:
 
     cred = DefaultAzureCredential()
     dataverse_url = get_secret("DATAVERSE_URL")
-    token = cred.get_token("https://orgXXXXXXXX.crm.dynamics.com/.default").token
+    token = cred.get_token(f"{dataverse_url.rstrip('/')}/.default").token  # FIX [C-2]: scope dinámico desde get_secret("DATAVERSE_URL")
 
     httpx.patch(
         f"{dataverse_url}/api/data/v9.2/cr_multitelreportes"
@@ -444,7 +444,7 @@ def upload_files_activity(upload_input: dict) -> dict:
         from azure.identity import DefaultAzureCredential as DAC
         cred2 = DAC()
         dv_url = get_secret("DATAVERSE_URL")
-        dv_token = cred2.get_token("https://orgXXXXXXXX.crm.dynamics.com/.default").token
+        dv_token = cred2.get_token(f"{dv_url.rstrip('/')}/.default").token  # FIX [C-2]: scope dinámico desde get_secret("DATAVERSE_URL")
         hx.patch(
             f"{dv_url}/api/data/v9.2/cr_multitelreportes"
             f"?$filter=cr_reporte_id eq '{reporte_id}'",
