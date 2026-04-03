@@ -47,7 +47,7 @@ jobs:
         env:
           AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
           AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
-          ALLOWED_EMAIL_DOMAIN: multitel.com
+          ALLOWED_EMAIL_DOMAIN: grupomultitel.com
           DATAVERSE_URL: https://test.crm.dynamics.com
           SHAREPOINT_SITE_ID: test-site-id
           TEAMS_WEBHOOK_SUPERVISORES: https://test.webhook.url
