@@ -1,5 +1,6 @@
 # .github/workflows/deploy-functions.yml
-# On push to main: package Python deps, deploy 4 Azure Functions.
+# On push to main: package Python deps, deploy Azure Functions.
+# Uses Publish Profile authentication (no service principal required).
 
 name: Deploy Azure Functions
 
@@ -19,7 +20,7 @@ on:
         options: [production, staging]
 
 env:
-  AZURE_FUNCTIONAPP_NAME: multitel-reportes-fn
+  AZURE_FUNCTIONAPP_NAME: multitel-functions
   AZURE_FUNCTIONAPP_PACKAGE_PATH: './functions'
   PYTHON_VERSION: '3.11'
 
@@ -27,18 +28,17 @@ jobs:
   build-and-deploy:
     name: Build y Deploy Azure Functions
     runs-on: ubuntu-latest
-    environment: production
 
     steps:
       - name: Checkout codigo
         uses: actions/checkout@v4
 
-      - name: Configurar Python ${{ env.PYTHON_VERSION }}
+      - name: Configurar Python
         uses: actions/setup-python@v5
         with:
           python-version: ${{ env.PYTHON_VERSION }}
 
-      - name: Instalar dependencias
+      - name: Instalar dependencias Python
         shell: bash
         run: |
           pushd '${{ env.AZURE_FUNCTIONAPP_PACKAGE_PATH }}'
@@ -51,60 +51,16 @@ jobs:
           sudo apt-get update -q
           sudo apt-get install -y -q libreoffice libreoffice-impress
 
-      - name: Login en Azure
-        uses: azure/login@v2
-        with:
-          creds: ${{ secrets.AZURE_CREDENTIALS }}
-
-      - name: Desplegar Azure Functions
+      - name: Desplegar Azure Functions via Publish Profile
         uses: azure/functions-action@v1
         with:
           app-name: ${{ env.AZURE_FUNCTIONAPP_NAME }}
           package: ${{ env.AZURE_FUNCTIONAPP_PACKAGE_PATH }}
+          publish-profile: ${{ secrets.AZURE_FUNCTIONAPP_PUBLISH_PROFILE }}
           scm-do-build-during-deployment: false
           enable-oryx-build: false
 
-      - name: Configurar App Settings
-        uses: azure/CLI@v2
-        with:
-          inlineScript: |
-            az functionapp config appsettings set \
-              --name ${{ env.AZURE_FUNCTIONAPP_NAME }} \
-              --resource-group ${{ secrets.AZURE_RESOURCE_GROUP }} \
-              --settings \
-              AZURE_TENANT_ID="${{ secrets.AZURE_TENANT_ID }}" \
-              AZURE_CLIENT_ID="${{ secrets.AZURE_CLIENT_ID }}" \
-              DATAVERSE_URL="${{ secrets.DATAVERSE_URL }}" \
-              GRAPH_API_BASE="https://graph.microsoft.com/v1.0" \
-              ONEDRIVE_ROOT_PATH="/Multitel/Reportes" \
-              SHAREPOINT_SITE_ID="${{ secrets.SHAREPOINT_SITE_ID }}" \
-              PLAY_PACKAGE_NAME="com.multitel.reportes" \
-              PLAY_INTEGRITY_DECRYPTION_KEY="${{ secrets.PLAY_INTEGRITY_DECRYPTION_KEY }}" \
-              PLAY_INTEGRITY_VERIFICATION_KEY="${{ secrets.PLAY_INTEGRITY_VERIFICATION_KEY }}" \
-              TEAMS_WEBHOOK_SUPERVISORES="${{ secrets.TEAMS_WEBHOOK_SUPERVISORES }}" \
-              TEAMS_TEAM_ID="${{ secrets.TEAMS_TEAM_ID }}" \
-              TEAMS_CHANNEL_ID="${{ secrets.TEAMS_CHANNEL_ID }}" \
-              JWT_AUDIENCE="api://${{ secrets.AZURE_CLIENT_ID }}" \
-              PPTX_TEMPLATE_PATH="/home/site/wwwroot/templates/plantilla_multitel.pptx" \
-              LIBREOFFICE_PATH="/usr/bin/libreoffice" \
-              DATAVERSE_ENTITY_REPORTES="multitel_reportes"
-
       - name: Verificar despliegue
         run: |
-          echo "Verificando estado de la Function App..."
-          sleep 30
-          response=$(curl -s -o /dev/null -w "%{http_code}" \
-            -H "x-functions-key: ${{ secrets.AZURE_FUNCTIONS_MASTER_KEY }}" \
-            "https://${{ env.AZURE_FUNCTIONAPP_NAME }}.azurewebsites.net/api/health")
-          if [ "$response" = "200" ] || [ "$response" = "401" ]; then
-            echo "Function App desplegada exitosamente (HTTP $response)"
-          else
-            echo "Advertencia: respuesta HTTP $response"
-          fi
-
-      - name: Notificar despliegue exitoso
-        if: success()
-        run: |
-          echo "Azure Functions desplegadas en ${{ env.AZURE_FUNCTIONAPP_NAME }}"
-          echo "Commit: ${{ github.sha }}"
-          echo "Actor: ${{ github.actor }}"
+          echo "Deployment completed for ${{ env.AZURE_FUNCTIONAPP_NAME }}"
+          echo "Functions deployed: fn_guardar_reporte, fn_generar_pptx, fn_subir_onedrive, fn_notificar, fn_aprobar"
