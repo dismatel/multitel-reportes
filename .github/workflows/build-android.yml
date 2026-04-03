@@ -1,5 +1,5 @@
 # .github/workflows/build-android.yml
-# On push to main (or tag v*): EAS Build generates signed Android APK.
+# On push to main or version tag: build signed Android APK via EAS.
 
 name: Build Android APK
 
@@ -33,76 +33,67 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '20'
-          cache: 'npm'
-          cache-dependency-path: app/package-lock.json
+          cache: npm
+          cache-dependency-path: 'app/package-lock.json'
 
-      - name: Install dependencies
+      - name: Instalar dependencias Node
         working-directory: app
         run: npm ci
 
-      - name: Install EAS CLI
+      - name: Instalar EAS CLI
         run: npm install -g eas-cli
 
-      - name: Setup Expo
-        uses: expo/expo-github-action@v8
-        with:
-          expo-version: latest
-          eas-version: latest
-          token: ${{ secrets.EXPO_TOKEN }}
+      - name: Restaurar keystore desde secret
+        run: |
+          echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 --decode > app/multitel.keystore
 
-      - name: Configure environment variables
+      - name: Configurar credenciales de firma
         working-directory: app
         run: |
-          cat > .env.local << EOF
-          EXPO_PUBLIC_APIM_BASE_URL=${{ secrets.APIM_BASE_URL }}
-          EXPO_PUBLIC_APIM_SUBSCRIPTION_KEY=${{ secrets.APIM_SUBSCRIPTION_KEY }}
-          EXPO_PUBLIC_AZURE_TENANT_ID=${{ secrets.AZURE_TENANT_ID }}
-          EXPO_PUBLIC_AZURE_CLIENT_ID=${{ secrets.AZURE_CLIENT_ID }}
-          EXPO_PUBLIC_APP_ENV=production
+          cat > credentials.json << EOF
+          {
+            "android": {
+              "keystore": {
+                "keystorePath": "multitel.keystore",
+                "keystorePassword": "${{ secrets.ANDROID_KEYSTORE_PASSWORD }}",
+                "keyAlias": "${{ secrets.ANDROID_KEY_ALIAS }}",
+                "keyPassword": "${{ secrets.ANDROID_KEY_PASSWORD }}"
+              }
+            }
+          }
           EOF
 
-      - name: EAS Build — Android
+      - name: Build APK con EAS
         working-directory: app
-        run: |
-          PROFILE="${{ github.event.inputs.profile || 'production' }}"
-          eas build \
-            --platform android \
-            --profile $PROFILE \
-            --non-interactive \
-            --no-wait
         env:
-          EAS_PROJECT_ID: ${{ secrets.EAS_PROJECT_ID }}
-
-      - name: Wait for build and download artifact
-        working-directory: app
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
         run: |
-          echo "Waiting for EAS build to complete..."
-          eas build:list --platform android --status finished --limit 1 --json \
-            | jq -r '.[0].artifacts.buildUrl // empty' \
-            | xargs -I{} curl -L {} -o multitel-reportes.apk || true
-        env:
-          EAS_PROJECT_ID: ${{ secrets.EAS_PROJECT_ID }}
+          eas build --platform android --profile production --non-interactive --local \
+            --output ../multitel-reportes.apk
 
-      - name: Upload APK artifact
+      - name: Limpiar keystore y credenciales
+        if: always()
+        run: |
+          rm -f app/multitel.keystore app/credentials.json
+
+      - name: Upload APK como artefacto
         uses: actions/upload-artifact@v4
         with:
-          name: multitel-reportes-${{ github.sha }}.apk
-          path: app/multitel-reportes.apk
-          if-no-files-found: ignore
+          name: multitel-reportes-apk
+          path: multitel-reportes.apk
           retention-days: 30
 
-      - name: Create GitHub Release
-        if: startsWith(github.ref, 'refs/tags/v')
+      - name: Crear Release en GitHub
+        if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
-          files: app/multitel-reportes.apk
-          name: "Multitel Reportes ${{ github.ref_name }}"
+          files: multitel-reportes.apk
           body: |
-            ## Multitel Reportes ${{ github.ref_name }}
-            APK Android firmado para distribución interna.
-            
-            ### Instalación
+            ## Multitel Reportes
+            APK Android firmado para distribucion interna.
+
+            ### Instalacion
             1. Descarga el APK adjunto
             2. Habilita "Instalar desde fuentes desconocidas" en Android
             3. Instala el APK
-            4. Inicia sesión con tu cuenta @grupomultitel.com
+            4. Inicia sesion con tu cuenta @grupomultitel.com
