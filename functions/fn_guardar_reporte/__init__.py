@@ -245,8 +245,8 @@ def main(req: func.HttpRequest, **kwargs) -> func.HttpResponse:
 
     RBAC: only users with role 'Tecnico' in Azure AD may call this.
     """
-    user_info = kwargs.get("user_info", {})
-    user_email = user_info.get("preferred_username", "unknown")
+    user_claims = kwargs.get("user_claims", {})  # FIX [C-1]: auth.py inyecta "user_claims", no "user_info"
+    user_email = user_claims.get("upn") or user_claims.get("preferred_username", "unknown")
     reporte_id = str(uuid.uuid4())
 
     try:
