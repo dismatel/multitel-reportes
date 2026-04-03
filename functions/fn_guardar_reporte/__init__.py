@@ -106,8 +106,11 @@ def _get_dataverse_client():
     from azure.identity import DefaultAzureCredential
     import httpx
     cred = DefaultAzureCredential()
-    dataverse_url = get_secret("DATAVERSE_URL")
-    token = cred.get_token("https://orgXXXXXXXX.crm.dynamics.com/.default").token
+    dataverse_url = get_secret("DATAVERSE_URL")  # e.g. https://orgXXXXXXXX.crm.dynamics.com
+    # FIX [C-2]: Use DATAVERSE_URL as the token scope instead of hardcoded placeholder.
+    # The Dataverse scope is always {dataverse_url}/.default (without trailing slash).
+    scope_url = dataverse_url.rstrip("/")
+    token = cred.get_token(f"{scope_url}/.default").token
     headers = {
         "Authorization": f"Bearer {token}",
         "Content-Type": "application/json",
