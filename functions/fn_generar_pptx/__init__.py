@@ -7,6 +7,7 @@ import hashlib
 import base64
 import tempfile
 import subprocess
+import re
 from datetime import datetime, timezone
 from typing import Optional, List, Dict
 from io import BytesIO
@@ -237,6 +238,19 @@ async def http_start(req: func.HttpRequest, starter: str, **kwargs) -> func.Http
     if not reporte_id:
         return func.HttpResponse(
             json.dumps({"error": "reporte_id requerido"}),
+            status_code=400,
+            mimetype="application/json",
+        )
+
+    # FIX [A-2]: Validar reporte_id como UUID para prevenir OData injection
+    _UUID_RE = re.compile(
+        r'^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+        re.IGNORECASE
+    )
+    if not _UUID_RE.match(reporte_id):
+        logger.warning("fn_generar_pptx: reporte_id no es un UUID válido: %s", reporte_id)
+        return func.HttpResponse(
+            json.dumps({"error": "reporte_id inválido"}),
             status_code=400,
             mimetype="application/json",
         )
