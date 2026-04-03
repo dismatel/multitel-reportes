@@ -73,7 +73,7 @@ except ValueError:
     try:
                 from azure.identity import DefaultAzureCredential
                 cred = DefaultAzureCredential()
-                dv_token = cred.get_token("https://orgXXXXXXXX.crm.dynamics.com/.default").token
+                dv_token = cred.get_token(f"{DATAVERSE_URL.rstrip('/')}/.default").token  # FIX [C-2]: scope dinámico desde DATAVERSE_URL env var
 
         patch_payload = {
                         "multitel_estado": nuevo_estado,
