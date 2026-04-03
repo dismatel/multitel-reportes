@@ -1,0 +1,17 @@
+—# =============================================================
+# CODEOWNERS — Multitel Reportes
+# Docs: https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
+# =============================================================
+# Default owner for everything not matched below
+* @dismatel
+
+# Security-critical: JWT middleware, RBAC, Play Integrity
+# FIX [B-2]: Requires tech-lead review on every change to auth layer.
+# Any PR touching these paths cannot be merged without approval from
+# the owner listed here (requires "Require review from Code Owners"
+# enabled in branch protection for main).
+functions/shared/auth.py @dismatel
+functions/shared/ @dismatel
+
+# GitHub Actions workflows (supply-chain security)
+.github/workflows/ @dismatel
