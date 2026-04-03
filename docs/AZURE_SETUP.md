@@ -94,7 +94,7 @@ az functionapp create \
                                     --name multitel-apim \
                                       --resource-group rg-multitel-reportes \
                                         --publisher-name "Multitel S.A. de C.V." \
-                                          --publisher-email admin@multitel.com \
+                                          --publisher-email admin@grupomultitel.com \
                                             --sku-name Consumption
                                             ```
 
