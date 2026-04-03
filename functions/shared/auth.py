@@ -2,6 +2,9 @@
 functions/shared/auth.py
 JWT verification middleware for Azure Functions.
 Provides require_auth decorator with RBAC and Play Integrity validation.
+
+FIX [C-1]: Migrated from python-jose (CVE-2024-33663) to PyJWT>=2.8.
+           Uses jwt.decode() with PyJWKClient for JWKS-based RS256 verification.
 """
 import os
 import json
@@ -12,7 +15,9 @@ import time
 from typing import Callable, List, Optional
 
 import requests
-from jose import jwt, JWTError
+import jwt as pyjwt
+from jwt.exceptions import InvalidTokenError, ExpiredSignatureError, DecodeError
+from jwt import PyJWKClient
 import azure.functions as func
 
 logger = logging.getLogger(__name__)
@@ -28,43 +33,74 @@ PLAY_INTEGRITY_PACKAGE = os.environ.get("ANDROID_PACKAGE_NAME", "com.multitel.re
 JWKS_URL = f"https://login.microsoftonline.com/{TENANT_ID}/discovery/v2.0/keys"
 ISSUER = f"https://login.microsoftonline.com/{TENANT_ID}/v2.0"
 
-_jwks_cache: dict = {"keys": [], "expires_at": 0}
-_JWKS_TTL = 3600
+# PyJWKClient handles key caching and rotation automatically (cache_keys=True by default).
+# It fetches JWKS on first use and refreshes when a kid is not found.
+_jwks_client = PyJWKClient(JWKS_URL, cache_keys=True, lifespan=3600)
 
 
-def _get_jwks() -> list:
-    now = time.time()
-    if now < _jwks_cache["expires_at"] and _jwks_cache["keys"]:
-        return _jwks_cache["keys"]
+def get_secret(secret_name: str) -> str:
+    """
+    Retrieve a secret from Azure Key Vault or Application Settings.
+    Uses DefaultAzureCredential (Managed Identity in production).
+    """
+    # First check environment (Application Settings / local.settings.json)
+    value = os.environ.get(secret_name, "")
+    if value:
+        return value
+    # Fallback: Azure Key Vault via SDK
     try:
-        resp = requests.get(JWKS_URL, timeout=10)
-        resp.raise_for_status()
-        keys = resp.json().get("keys", [])
-        _jwks_cache["keys"] = keys
-        _jwks_cache["expires_at"] = now + _JWKS_TTL
-        return keys
+        from azure.identity import DefaultAzureCredential
+        from azure.keyvault.secrets import SecretClient
+        vault_url = os.environ.get("AZURE_KEYVAULT_URL", "")
+        if not vault_url:
+            raise ValueError(f"Secret '{secret_name}' not found in env and AZURE_KEYVAULT_URL not set")
+        cred = DefaultAzureCredential()
+        client = SecretClient(vault_url=vault_url, credential=cred)
+        return client.get_secret(secret_name).value or ""
     except Exception as exc:
-        logger.error("Failed to fetch JWKS: %s", exc)
-        return _jwks_cache.get("keys", [])
+        logger.error("get_secret failed for '%s': %s", secret_name, exc)
+        raise
 
 
 def verify_azure_ad_token(token: str) -> dict:
+    """
+    Validate an Azure AD Bearer JWT using PyJWT + JWKS endpoint.
+    Verifies: signature (RS256), expiry, audience (CLIENT_ID),
+              issuer, and email domain.
+
+    FIX [C-1]: Replaced python-jose (CVE-2024-33663 — algorithm confusion
+               allowing signature bypass) with PyJWT 2.9+ which correctly
+               enforces algorithm restrictions via PyJWKClient.
+    """
     if not token:
         raise ValueError("Missing token")
-    keys = _get_jwks()
-    if not keys:
-        raise ValueError("Could not retrieve signing keys")
     try:
-        claims = jwt.decode(
+        signing_key = _jwks_client.get_signing_key_from_jwt(token)
+    except Exception as exc:
+        logger.error("JWKS key fetch failed: %s", exc)
+        raise ValueError(f"Could not retrieve signing key: {exc}") from exc
+
+    try:
+        claims = pyjwt.decode(
             token,
-            keys,
+            signing_key,
             algorithms=["RS256"],
             audience=CLIENT_ID,
             issuer=ISSUER,
-            options={"verify_exp": True},
+            options={
+                "verify_exp": True,
+                "verify_aud": True,
+                "verify_iss": True,
+                "require": ["exp", "aud", "iss", "upn"],
+            },
         )
-    except JWTError as exc:
+    except ExpiredSignatureError as exc:
+        raise ValueError("Token has expired") from exc
+    except DecodeError as exc:
+        raise ValueError(f"Token decode error: {exc}") from exc
+    except InvalidTokenError as exc:
         raise ValueError(f"Token validation failed: {exc}") from exc
+
     upn = claims.get("upn") or claims.get("preferred_username") or ""
     if not upn.lower().endswith(f"@{ALLOWED_DOMAIN}"):
         raise ValueError(f"Account domain not allowed: {upn}")
@@ -133,6 +169,7 @@ def verify_play_integrity(integrity_token: str) -> bool:
         if resp.status_code != 200:
             logger.warning("Play Integrity API returned %s", resp.status_code)
             return False
+
         verdict = resp.json()
         token_payload = verdict.get("tokenPayloadExternal", {})
         app_integrity = token_payload.get("appIntegrity", {})
