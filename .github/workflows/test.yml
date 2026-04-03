@@ -45,8 +45,8 @@ jobs:
 
       - name: Run pytest
         env:
-          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
-          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_TENANT_ID: test-tenant-00000000-0000-0000-0000-000000000000
+          AZURE_CLIENT_ID: test-client-00000000-0000-0000-0000-000000000000
           ALLOWED_EMAIL_DOMAIN: grupomultitel.com
           DATAVERSE_URL: https://test.crm.dynamics.com
           SHAREPOINT_SITE_ID: test-site-id
@@ -59,9 +59,7 @@ jobs:
             -v
 
       - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v4
         with:
-          token: ${{ secrets.CODECOV_TOKEN }}
           files: functions/coverage.xml
           flags: functions
           fail_ci_if_error: false
@@ -100,9 +98,7 @@ jobs:
           --forceExit
 
       - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v4
         with:
-          token: ${{ secrets.CODECOV_TOKEN }}
           files: app/coverage/lcov.info
           flags: app
           fail_ci_if_error: false
