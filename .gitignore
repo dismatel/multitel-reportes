@@ -37,6 +37,10 @@ ENV/
 .env
 *.env
 
+# Azure Functions local development — FIX [B-1]
+local.settings.json
+functions/local.settings.json
+
 # IDE
 .vscode/
 .idea/
