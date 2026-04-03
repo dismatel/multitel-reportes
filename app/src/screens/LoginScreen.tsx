@@ -20,7 +20,7 @@ import {
 // ---- Constants ----
 const TENANT_ID = process.env.EXPO_PUBLIC_AZURE_TENANT_ID ?? '';
 const CLIENT_ID = process.env.EXPO_PUBLIC_AZURE_CLIENT_ID ?? '';
-const ALLOWED_DOMAIN = '@multitel.com';
+const ALLOWED_DOMAIN = '@grupomultitel.com';
 const APP_VERSION = '1.0.0';
 
 const MSAL_CONFIG = {
@@ -79,7 +79,7 @@ const LoginScreen: React.FC = () => {
 
       const email: string = result.account?.username ?? '';
 
-      // Domain validation — ONLY @multitel.com accounts allowed
+      // Domain validation — ONLY @grupomultitel.com accounts allowed
       if (!email.toLowerCase().endsWith(ALLOWED_DOMAIN)) {
         Alert.alert(
           'Acceso denegado',
@@ -161,7 +161,7 @@ const LoginScreen: React.FC = () => {
         </TouchableOpacity>
 
         <Text style={styles.hint}>
-          Usa tu cuenta corporativa @multitel.com
+          Usa tu cuenta corporativa @grupomultitel.com
         </Text>
       </View>
 
