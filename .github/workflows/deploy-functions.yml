@@ -46,10 +46,22 @@ jobs:
           pip install -r requirements.txt --target=".python_packages/lib/site-packages" --ignore-requires-python
           popd
 
-      - name: Instalar LibreOffice para conversion PDF
-        run: |
-          sudo apt-get update -q
-          sudo apt-get install -y -q libreoffice libreoffice-impress
+      # FIX [C-3]: The LibreOffice install step was REMOVED.
+      # Rationale: installing LibreOffice on the GitHub Actions runner has NO effect
+      # on the Azure Function App — the runner is ephemeral and the deployed package
+      # (./functions) does not include system binaries. LibreOffice must be available
+      # at RUNTIME inside the Function App environment, not at build time.
+      #
+      # RECOMMENDED SOLUTION:
+      #   Migrate fn_generar_pptx to an Azure Container Apps Job with a custom Docker
+      #   image that includes LibreOffice (e.g. FROM python:3.11-slim + apt-get libreoffice).
+      #   Trigger it via Service Bus instead of HTTP Durable Function.
+      #   See: docs/adr/0001-pdf-conversion-container.md (to be created)
+      #
+      # INTERIM MITIGATION (if staying on Functions):
+      #   Use a Linux Consumption Plan with a custom Docker image, OR
+      #   replace LibreOffice with python-pptx -> reportlab for PDF generation
+      #   to avoid the system binary dependency entirely.
 
       - name: Desplegar Azure Functions via Publish Profile
         uses: azure/functions-action@v1
