@@ -5,7 +5,7 @@ import hashlib
 import uuid
 from datetime import datetime, timezone
 from typing import Optional, List
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, Field, field_validator
 
 from ..shared.auth import require_auth, get_secret
 
@@ -92,7 +92,8 @@ class ReporteSchema(BaseModel):
     si_no: Optional[str] = ""
     patchcord_vars: Optional[dict] = {}   # PC01..PC28 libres
 
-    @validator("fecha")
+    @field_validator("fecha", mode="before")
+    @classmethod
     def validate_fecha(cls, v):
         datetime.strptime(v, "%Y-%m-%d")
         return v
