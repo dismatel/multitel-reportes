@@ -4,7 +4,7 @@ azure-functions==1.17.0
 # Azure SDK
 azure-identity==1.18.0
 azure-storage-blob==12.23.0
-azure-keyvault-secrets==4.8.0
+azure-keyvault-secrets==4.10.0
 
 # Durable Functions — instalado desde GitHub por incompatibilidad PyPI con Python 3.11
 # La versión en PyPI requiere Python >=3.13
