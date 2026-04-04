@@ -19,7 +19,7 @@ msgraph-core==1.1.0
 
 # HTTP clients
 requests==2.32.3
-httpx==0.27.2
+httpx==0.28.1
 aiohttp==3.10.10
 
 # PPTX generation
