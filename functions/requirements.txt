@@ -6,13 +6,11 @@ azure-identity==1.18.0
 azure-storage-blob==12.23.0
 azure-keyvault-secrets==4.8.0
 
-# Durable Functions — REQUIRED for fn_generar_pptx orchestration
-# FIX: rango flexible para compatibilidad con Python 3.11
-azure-durable-functions>=1.0.0,<2.0.0
+# Durable Functions — instalado desde GitHub por incompatibilidad PyPI con Python 3.11
+# La versión en PyPI requiere Python >=3.13
+git+https://github.com/Azure/azure-functions-durable-python.git@v1.2.2
 
 # Microsoft Graph / MSAL
-# FIX: Se elimina python-jose (CVE-2024-33663, bypass de firma JWT)
-# Se usa PyJWT de forma consistente en shared/auth.py
 msal==1.31.0
 PyJWT==2.9.0
 msgraph-core==1.1.0
@@ -39,5 +37,4 @@ cryptography==43.0.3
 google-auth==2.35.0
 
 # NOTE: google-auth-httplib2 eliminado — no se usa en ninguna function (FIX B-6)
-# NOTE: azure-mgmt-resource==23.1.1 eliminado — no se usa en ninguna function
-# y añadía ~40MB al paquete de deploy, aumentando cold start.
+# NOTE: azure-mgmt-resource eliminado — aumentaba cold start innecesariamente
