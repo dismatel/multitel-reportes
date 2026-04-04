@@ -1,6 +1,6 @@
 # .github/workflows/deploy-functions.yml
-# On push to main: package Python deps, deploy Azure Functions.
-# Uses Publish Profile authentication (no service principal required).
+# Autenticación via Service Principal (AZURE_CREDENTIALS)
+# Build remoto activado para Python en Linux (oryx-build)
 
 name: Deploy Azure Functions
 
@@ -9,6 +9,7 @@ on:
     branches: [main]
     paths:
       - 'functions/**'
+      - 'requirements.txt'
       - '.github/workflows/deploy-functions.yml'
   workflow_dispatch:
     inputs:
@@ -21,7 +22,7 @@ on:
 
 env:
   AZURE_FUNCTIONAPP_NAME: multitel-functions
-  AZURE_FUNCTIONAPP_PACKAGE_PATH: './functions'
+  AZURE_FUNCTIONAPP_PACKAGE_PATH: '.'
   PYTHON_VERSION: '3.11'
 
 jobs:
@@ -33,46 +34,34 @@ jobs:
       - name: Checkout codigo
         uses: actions/checkout@v4
 
+      - name: Login a Azure con Service Principal
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
       - name: Configurar Python
         uses: actions/setup-python@v5
         with:
           python-version: ${{ env.PYTHON_VERSION }}
 
-      - name: Instalar dependencias Python
+      - name: Verificar Python y dependencias
         shell: bash
         run: |
-          pushd '${{ env.AZURE_FUNCTIONAPP_PACKAGE_PATH }}'
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt --target=".python_packages/lib/site-packages" --ignore-requires-python
-          popd
+          python --version
+          pip install --upgrade pip
+          pip install -r requirements.txt --dry-run
 
-      # FIX [C-3]: The LibreOffice install step was REMOVED.
-      # Rationale: installing LibreOffice on the GitHub Actions runner has NO effect
-      # on the Azure Function App — the runner is ephemeral and the deployed package
-      # (./functions) does not include system binaries. LibreOffice must be available
-      # at RUNTIME inside the Function App environment, not at build time.
-      #
-      # RECOMMENDED SOLUTION:
-      #   Migrate fn_generar_pptx to an Azure Container Apps Job with a custom Docker
-      #   image that includes LibreOffice (e.g. FROM python:3.11-slim + apt-get libreoffice).
-      #   Trigger it via Service Bus instead of HTTP Durable Function.
-      #   See: docs/adr/0001-pdf-conversion-container.md (to be created)
-      #
-      # INTERIM MITIGATION (if staying on Functions):
-      #   Use a Linux Consumption Plan with a custom Docker image, OR
-      #   replace LibreOffice with python-pptx -> reportlab for PDF generation
-      #   to avoid the system binary dependency entirely.
-
-      - name: Desplegar Azure Functions via Publish Profile
+      - name: Desplegar Azure Functions via Service Principal
         uses: azure/functions-action@v1
         with:
           app-name: ${{ env.AZURE_FUNCTIONAPP_NAME }}
           package: ${{ env.AZURE_FUNCTIONAPP_PACKAGE_PATH }}
-          publish-profile: ${{ secrets.AZURE_FUNCTIONAPP_PUBLISH_PROFILE }}
-          scm-do-build-during-deployment: false
-          enable-oryx-build: false
+          scm-do-build-during-deployment: true
+          enable-oryx-build: true
 
       - name: Verificar despliegue
         run: |
-          echo "Deployment completed for ${{ env.AZURE_FUNCTIONAPP_NAME }}"
-          echo "Functions deployed: fn_guardar_reporte, fn_generar_pptx, fn_subir_onedrive, fn_notificar, fn_aprobar"
+          echo "✅ Deployment completado: ${{ env.AZURE_FUNCTIONAPP_NAME }}"
+          echo "📦 Functions: fn_guardar_reporte, fn_generar_pptx, fn_subir_onedrive, fn_notificar, fn_aprobar"
+          echo "🌿 Branch: ${{ github.ref_name }}"
+          echo "🔖 Commit: ${{ github.sha }}"
