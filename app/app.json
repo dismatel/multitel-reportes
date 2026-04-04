@@ -53,6 +53,12 @@
         {
           "faceIDPermission": "Allow $(PRODUCT_NAME) to access your Face ID biometric data."
         }
+      ],
+      [
+        "react-native-msal",
+        {
+          "androidRedirectUri": "msauth://com.multitel.reportes/callback"
+        }
       ]
     ],
     "extra": {
