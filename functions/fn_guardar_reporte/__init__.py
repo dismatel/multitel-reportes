@@ -1,4 +1,4 @@
-————import azure.functions as func
+ââââimport azure.functions as func
 import json
 import logging
 import hashlib
@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
-# Pydantic schema — validates the full form payload before touching Dataverse
+# Pydantic schema â validates the full form payload before touching Dataverse
 # ---------------------------------------------------------------------------
 
 class PatchcordRow(BaseModel):
@@ -53,7 +53,7 @@ class ReporteSchema(BaseModel):
     coordinadora: str
     encargados_grupos: str
 
-    # ---- Paso 2: Datos técnicos ----
+    # ---- Paso 2: Datos tÃ©cnicos ----
     nodo: str
     tipo_servicio: str
     equipo_instalado: str
@@ -106,7 +106,17 @@ class ReporteSchema(BaseModel):
 def _get_dataverse_client():
     from azure.identity import DefaultAzureCredential
     import httpx
-    cred = DefaultAzureCredential()
+    _mi_client_id = os.environ.get("MANAGED_IDENTITY_CLIENT_ID", "")
+
+    cred = (
+
+        ManagedIdentityCredential(client_id=_mi_client_id)
+
+        if _mi_client_id
+
+        else DefaultAzureCredential()
+
+    )
     dataverse_url = get_secret("DATAVERSE_URL")  # e.g. https://orgXXXXXXXX.crm.dynamics.com
     # FIX [C-2]: Use DATAVERSE_URL as the token scope instead of hardcoded placeholder.
     # The Dataverse scope is always {dataverse_url}/.default (without trailing slash).
@@ -197,9 +207,19 @@ def _write_audit_log(
     """Write an audit entry to SharePoint list via Graph API."""
     try:
         import httpx
-        from azure.identity import DefaultAzureCredential
+        from azure.identity import ManagedIdentityCredential, DefaultAzureCredential
 
-        cred = DefaultAzureCredential()
+        _mi_client_id = os.environ.get("MANAGED_IDENTITY_CLIENT_ID", "")
+
+        cred = (
+
+            ManagedIdentityCredential(client_id=_mi_client_id)
+
+            if _mi_client_id
+
+            else DefaultAzureCredential()
+
+        )
         graph_token = cred.get_token("https://graph.microsoft.com/.default").token
 
         sharepoint_site_id = get_secret("SHAREPOINT_SITE_ID")
@@ -254,7 +274,7 @@ def main(req: func.HttpRequest, **kwargs) -> func.HttpResponse:
     except ValueError as exc:
         logger.warning("invalid_json user=%s err=%s", user_email, exc)
         return func.HttpResponse(
-            json.dumps({"error": "Payload JSON inválido"}),
+            json.dumps({"error": "Payload JSON invÃ¡lido"}),
             status_code=400,
             mimetype="application/json",
         )
@@ -265,7 +285,7 @@ def main(req: func.HttpRequest, **kwargs) -> func.HttpResponse:
     except Exception as exc:
         logger.warning("schema_validation_failed user=%s", user_email)
         return func.HttpResponse(
-            json.dumps({"error": "Schema inválido", "detail": str(exc)}),
+            json.dumps({"error": "Schema invÃ¡lido", "detail": str(exc)}),
             status_code=422,
             mimetype="application/json",
         )
