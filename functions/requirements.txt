@@ -34,7 +34,7 @@ pydantic==2.9.2
 cryptography==43.0.3
 
 # Google Play Integrity
-google-auth==2.35.0
+google-auth==2.49.1
 
 # NOTE: google-auth-httplib2 eliminado — no se usa en ninguna function (FIX B-6)
 # NOTE: azure-mgmt-resource eliminado — aumentaba cold start innecesariamente
