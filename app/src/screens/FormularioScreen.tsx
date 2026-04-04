@@ -11,6 +11,7 @@ import {
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import * as SecureStore from 'expo-secure-store';
+import Constants from 'expo-constants';
 
 import { COLORS } from '../theme/colors';
 import type { RootStackParamList } from '../../App';
@@ -18,11 +19,13 @@ import type { RootStackParamList } from '../../App';
 type Nav = NativeStackNavigationProp<RootStackParamList, 'Formulario'>;
 type Route = RouteProp<RootStackParamList, 'Formulario'>;
 
+const extra = Constants.expoConfig?.extra ?? {};
+const APIM_BASE_URL = extra.apiBaseUrl ?? '';
+
 // ---------------------------------------------------------------------------
 // Template variable map — 60+ fields
 // ---------------------------------------------------------------------------
 interface FormData {
-  // Paso 1: Portada
   tipoReporte: 'PlantaExterna' | 'CPE';
   cliente: 'Claro' | 'Tigo' | 'Otro';
   clienteNombre: string;
@@ -32,7 +35,6 @@ interface FormData {
   coordinadora: string;
   supervisorLider: string;
   gerenteOperativo: string;
-  // Paso 2: Datos técnicos
   nodo: string;
   tipoServicio: string;
   equipoInstalado: string;
@@ -52,16 +54,12 @@ interface FormData {
   odfNodo: string;
   ada: string;
   odi: string;
-  // Paso 3: Materiales (checkbox + cantidad)
   materiales: Record<string, { checked: boolean; cantidad: string }>;
-  // Patchcords (PC01-PC28)
   patchcords: Array<{
     tipo: string; metraje: string; modo: 'SM' | 'MM';
     simplex: boolean; duplex: boolean; cantidad: string;
   }>;
-  // Paso 4: Fotos (URI strings, keyed by slot)
   fotos: Record<string, string>;
-  // Paso 5: Firmas (base64 SVG)
   firmaSupervisorLider: string;
   firmaCoordinadora: string;
   firmaGerenteOperativo: string;
@@ -136,7 +134,6 @@ export default function FormularioScreen() {
 
   const fotoSlots = form.tipoReporte === 'PlantaExterna' ? FOTO_SLOTS_PE : FOTO_SLOTS_CPE;
 
-  // Validation per step
   const validateStep = (): boolean => {
     if (step === 0) {
       if (!form.clienteNombre.trim()) { Alert.alert('Error', 'Nombre de cliente requerido'); return false; }
@@ -187,7 +184,9 @@ export default function FormularioScreen() {
     setSaving(true);
     try {
       const token = await SecureStore.getItemAsync('msal_access_token');
-      const APIM = process.env.EXPO_PUBLIC_APIM_BASE_URL ?? '';
+
+      // FIX A-1: usar apiBaseUrl desde extra (no EXPO_PUBLIC_)
+      const APIM = APIM_BASE_URL;
 
       // Step 1: guardar_reporte
       const guardarResp = await fetch(`${APIM}/api/reportes`, {
@@ -263,7 +262,6 @@ export default function FormularioScreen() {
     <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <StatusBar barStyle="light-content" backgroundColor={COLORS.header} />
 
-      {/* Header with progress */}
       <View style={styles.header}>
         <TouchableOpacity onPress={goBack} style={styles.backBtn}>
           <Text style={styles.backText}>{'‹'}</Text>
@@ -301,7 +299,6 @@ export default function FormularioScreen() {
         <View style={{ height: 32 }} />
       </ScrollView>
 
-      {/* Navigation buttons */}
       {step < 4 && (
         <View style={styles.navRow}>
           <TouchableOpacity style={styles.navBtnSecondary} onPress={goBack}>

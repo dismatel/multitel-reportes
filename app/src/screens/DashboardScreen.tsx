@@ -16,12 +16,16 @@ import {
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import * as SecureStore from 'expo-secure-store';
-import { PublicClientApplication } from '@azure/msal-react-native';
+import Constants from 'expo-constants';
 
 import { COLORS, STATUS_COLORS } from '../theme/colors';
 import type { RootStackParamList } from '../../App';
 
 type Nav = NativeStackNavigationProp<RootStackParamList, 'Dashboard'>;
+
+// FIX A-1: usar apiBaseUrl desde extra (no EXPO_PUBLIC_)
+const extra = Constants.expoConfig?.extra ?? {};
+const APIM_BASE = extra.apiBaseUrl ?? '';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -41,10 +45,6 @@ interface Stats {
   enviados: number;
 }
 
-// ---------------------------------------------------------------------------
-// Constants
-// ---------------------------------------------------------------------------
-const APIM_BASE = process.env.EXPO_PUBLIC_APIM_BASE_URL ?? '';
 const STATUS_LABELS: Record<Reporte['estado'], string> = {
   Enviado: 'Enviado',
   Borrador: 'Borrador',
@@ -234,8 +234,6 @@ export default function DashboardScreen() {
 // ---------------------------------------------------------------------------
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: COLORS.background },
-
-  // Header
   header: {
     backgroundColor: COLORS.header,
     flexDirection: 'row',
@@ -256,8 +254,6 @@ const styles = StyleSheet.create({
   headerNombre: { color: '#fff', fontSize: 16, fontWeight: '700', maxWidth: 200 },
   logoutBtn: { paddingVertical: 6, paddingHorizontal: 12 },
   logoutText: { color: 'rgba(255,255,255,0.7)', fontSize: 13 },
-
-  // Stats
   statsRow: {
     flexDirection: 'row', gap: 10,
     paddingHorizontal: 16, paddingTop: 16,
@@ -271,8 +267,6 @@ const styles = StyleSheet.create({
   },
   statNumber: { fontSize: 26, fontWeight: '800', color: COLORS.header },
   statLabel: { fontSize: 11, color: '#888', marginTop: 2, textAlign: 'center' },
-
-  // New report button
   nuevoReporteBtn: {
     backgroundColor: COLORS.primary,
     marginHorizontal: 16, marginTop: 16,
@@ -282,8 +276,6 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.3, shadowRadius: 8, elevation: 4,
   },
   nuevoReporteBtnText: { color: '#fff', fontSize: 17, fontWeight: '700' },
-
-  // List
   sectionTitle: {
     paddingHorizontal: 16, paddingTop: 20, paddingBottom: 8,
     fontSize: 14, fontWeight: '700', color: COLORS.header,
@@ -303,8 +295,6 @@ const styles = StyleSheet.create({
   reporteFecha: { fontSize: 11, color: '#999', marginTop: 4 },
   estadoBadge: { borderRadius: 20, paddingHorizontal: 10, paddingVertical: 4 },
   estadoText: { fontSize: 11, fontWeight: '700' },
-
-  // Empty
   emptyState: { alignItems: 'center', paddingTop: 48 },
   emptyText: { fontSize: 16, color: '#999', fontWeight: '600' },
   emptySubText: { fontSize: 13, color: '#bbb', marginTop: 6 },
