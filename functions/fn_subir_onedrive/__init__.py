@@ -20,9 +20,19 @@ def _write_audit_log(
     """Write audit entry to SharePoint via Graph API."""
     try:
         import httpx
-        from azure.identity import DefaultAzureCredential
+        from azure.identity import ManagedIdentityCredential, DefaultAzureCredential
 
-        cred = DefaultAzureCredential()
+        _mi_client_id = os.environ.get("MANAGED_IDENTITY_CLIENT_ID", "")
+
+        cred = (
+
+            ManagedIdentityCredential(client_id=_mi_client_id)
+
+            if _mi_client_id
+
+            else DefaultAzureCredential()
+
+        )
         graph_token = cred.get_token("https://graph.microsoft.com/.default").token
         sharepoint_site_id = get_secret("SHAREPOINT_SITE_ID")
         audit_list_id = get_secret("SHAREPOINT_AUDIT_LIST_ID")
@@ -146,9 +156,19 @@ def _update_dataverse_urls(
 ) -> None:
     """Patch Dataverse record with OneDrive URLs and PPTX SHA-256."""
     import httpx
-    from azure.identity import DefaultAzureCredential
+    from azure.identity import ManagedIdentityCredential, DefaultAzureCredential
 
-    cred = DefaultAzureCredential()
+    _mi_client_id = os.environ.get("MANAGED_IDENTITY_CLIENT_ID", "")
+
+    cred = (
+
+        ManagedIdentityCredential(client_id=_mi_client_id)
+
+        if _mi_client_id
+
+        else DefaultAzureCredential()
+
+    )
     dataverse_url = get_secret("DATAVERSE_URL")
     token = cred.get_token("https://orgXXXXXXXX.crm.dynamics.com/.default").token
 
@@ -178,7 +198,7 @@ def _update_dataverse_urls(
 def main(req: func.HttpRequest, **kwargs) -> func.HttpResponse:
     """
     POST /api/subir-onedrive
-    Internal endpoint — called by fn_generar_pptx after generation completes.
+    Internal endpoint â called by fn_generar_pptx after generation completes.
     Receives file paths (temp storage), uploads both PPTX and PDF to
     /Multitel/Reportes/{reporte_id}/ in OneDrive, computes SHA-256 of PPTX,
     updates Dataverse with URLs and hash, writes audit log.
@@ -200,7 +220,7 @@ def main(req: func.HttpRequest, **kwargs) -> func.HttpResponse:
         body = req.get_json()
     except ValueError:
         return func.HttpResponse(
-            json.dumps({"error": "Payload JSON inválido"}),
+            json.dumps({"error": "Payload JSON invÃ¡lido"}),
             status_code=400,
             mimetype="application/json",
         )
@@ -230,8 +250,13 @@ def main(req: func.HttpRequest, **kwargs) -> func.HttpResponse:
             mimetype="application/json",
         )
 
-    from azure.identity import DefaultAzureCredential
-    cred = DefaultAzureCredential()
+    from azure.identity import ManagedIdentityCredential, DefaultAzureCredential
+    _mi_client_id = os.environ.get("MANAGED_IDENTITY_CLIENT_ID", "")
+    cred = (
+        ManagedIdentityCredential(client_id=_mi_client_id)
+        if _mi_client_id
+        else DefaultAzureCredential()
+    )
     graph_token = cred.get_token("https://graph.microsoft.com/.default").token
     drive_id = get_secret("ONEDRIVE_DRIVE_ID")
 
