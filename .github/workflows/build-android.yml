@@ -27,18 +27,18 @@ jobs:
 
     steps:
       - name: Checkout codigo
-        uses: actions/checkout@v4
+        uses: actions/checkout@v4.2.2
 
-      - name: Set up Node.js 20
-        uses: actions/setup-node@v4
+      - name: Set up Node.js 22
+        uses: actions/setup-node@v4.1.0
         with:
-          node-version: '20'
+          node-version: '22'
           cache: npm
           cache-dependency-path: 'app/package-lock.json'
 
       - name: Instalar dependencias Node
         working-directory: app
-        run: npm ci
+        run: npm ci --legacy-peer-deps
 
       - name: Instalar EAS CLI
         run: npm install -g eas-cli
@@ -77,7 +77,7 @@ jobs:
           rm -f app/multitel.keystore app/credentials.json
 
       - name: Upload APK como artefacto
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v4.4.3
         with:
           name: multitel-reportes-apk
           path: multitel-reportes.apk
