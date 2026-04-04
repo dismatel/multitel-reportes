@@ -1,3 +1,5 @@
+import os                  # FIX M-6: import os a nivel de módulo
+import hmac                # FIX A-4: comparación segura de claves
 import azure.functions as func
 import json
 import logging
@@ -21,15 +23,10 @@ def _write_audit_log(
         from azure.identity import ManagedIdentityCredential, DefaultAzureCredential
 
         _mi_client_id = os.environ.get("MANAGED_IDENTITY_CLIENT_ID", "")
-
         cred = (
-
             ManagedIdentityCredential(client_id=_mi_client_id)
-
             if _mi_client_id
-
             else DefaultAzureCredential()
-
         )
         graph_token = cred.get_token("https://graph.microsoft.com/.default").token
         sharepoint_site_id = get_secret("SHAREPOINT_SITE_ID")
@@ -135,17 +132,24 @@ def _send_teams_approval_card(
 def main(req: func.HttpRequest, **kwargs) -> func.HttpResponse:
     """
     POST /api/notificar
-    Internal endpoint â called by fn_generar_pptx orchestrator after files
-    are uploaded to OneDrive.  No user-facing RBAC (sistema call), but
+    Internal endpoint — called by fn_generar_pptx orchestrator after files
+    are uploaded to OneDrive. No user-facing RBAC (sistema call), but
     validates a shared function key from Key Vault.
 
     Body: { reporte_id, tecnico_email, pptx_url, pdf_url }
     """
-    # Validate internal function key (not Azure AD â this is a system-to-system call)
+    # FIX A-4: usar hmac.compare_digest para prevenir timing attacks
     expected_key = get_secret("FN_NOTIFICAR_KEY")
     provided_key = req.headers.get("x-functions-key", "")
-    if provided_key != expected_key:
-        logger.warning("notificar_unauthorized attempt from %s", req.headers.get("x-forwarded-for", "unknown"))
+
+    if not hmac.compare_digest(
+        provided_key.encode("utf-8"),
+        expected_key.encode("utf-8"),
+    ):
+        logger.warning(
+            "notificar_unauthorized attempt from %s",
+            req.headers.get("x-forwarded-for", "unknown"),
+        )
         return func.HttpResponse(
             json.dumps({"error": "Unauthorized"}),
             status_code=401,
@@ -156,7 +160,7 @@ def main(req: func.HttpRequest, **kwargs) -> func.HttpResponse:
         body = req.get_json()
     except ValueError:
         return func.HttpResponse(
-            json.dumps({"error": "Payload JSON invÃ¡lido"}),
+            json.dumps({"error": "Payload JSON inválido"}),
             status_code=400,
             mimetype="application/json",
         )
@@ -186,16 +190,20 @@ def main(req: func.HttpRequest, **kwargs) -> func.HttpResponse:
 
     # ---- Email notification to technician ----
     try:
-        _send_email_notification(graph_token, tecnico_email, reporte_id, pptx_url, pdf_url)
+        _send_email_notification(
+            graph_token, tecnico_email, reporte_id, pptx_url, pdf_url
+        )
         logger.info("email_sent reporte_id=%s to=%s", reporte_id, tecnico_email)
     except Exception as exc:
         logger.error("email_send_failed reporte_id=%s err=%s", reporte_id, exc)
         errors.append(f"email: {exc}")
 
-    # ---- Teams Adaptive Card with Aprobar/Rechazar buttons ----
+    # ---- Teams Adaptive Card con botones Aprobar/Rechazar ----
     try:
         pa_webhook = get_secret("POWER_AUTOMATE_APPROVAL_WEBHOOK")
-        _send_teams_approval_card(pa_webhook, reporte_id, tecnico_email, pptx_url, pdf_url)
+        _send_teams_approval_card(
+            pa_webhook, reporte_id, tecnico_email, pptx_url, pdf_url
+        )
         logger.info("teams_card_sent reporte_id=%s", reporte_id)
     except Exception as exc:
         logger.error("teams_card_failed reporte_id=%s err=%s", reporte_id, exc)
