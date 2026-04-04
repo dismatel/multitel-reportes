@@ -1,5 +1,5 @@
 # Azure Functions core
-azure-functions==1.17.0
+azure-functions==2.0.0
 
 # Azure SDK
 azure-identity==1.18.0
