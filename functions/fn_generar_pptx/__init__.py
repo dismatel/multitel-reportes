@@ -52,7 +52,7 @@ CPE_SLOTS: Dict[str, dict] = {
 }
 
 # ---------------------------------------------------------------------------
-# RUN MERGING — CRITICAL: python-pptx splits {{Variable}} across multiple runs
+# RUN MERGING â CRITICAL: python-pptx splits {{Variable}} across multiple runs
 # ---------------------------------------------------------------------------
 
 def merge_runs_and_replace(paragraph, variables: dict) -> None:
@@ -156,7 +156,7 @@ def insert_photos(prs, fotos: list, tipo_reporte: str) -> None:
             except Exception as exc:
                 logger.warning("photo_insert_failed slot=%s err=%s", slot_nombre, exc)
         else:
-            # No placeholder found — append to slide at default position
+            # No placeholder found â append to slide at default position
             try:
                 slide.shapes.add_picture(
                     BytesIO(img_bytes),
@@ -214,13 +214,13 @@ def build_variable_map(payload: dict) -> dict:
 
 
 # ---------------------------------------------------------------------------
-# DURABLE FUNCTION — HTTP STARTER
+# DURABLE FUNCTION â HTTP STARTER
 # ---------------------------------------------------------------------------
 
 @require_auth(required_roles=["Tecnico"])
 async def http_start(req: func.HttpRequest, starter: str, **kwargs) -> func.HttpResponse:
     """
-    HTTP trigger — returns job_id IMMEDIATELY without blocking.
+    HTTP trigger â returns job_id IMMEDIATELY without blocking.
     The heavy lifting runs asynchronously in the orchestrator.
     """
     client = df.DurableOrchestrationClient(starter)
@@ -229,7 +229,7 @@ async def http_start(req: func.HttpRequest, starter: str, **kwargs) -> func.Http
         body = req.get_json()
     except ValueError:
         return func.HttpResponse(
-            json.dumps({"error": "Payload JSON inválido"}),
+            json.dumps({"error": "Payload JSON invÃ¡lido"}),
             status_code=400,
             mimetype="application/json",
         )
@@ -248,9 +248,9 @@ async def http_start(req: func.HttpRequest, starter: str, **kwargs) -> func.Http
         re.IGNORECASE
     )
     if not _UUID_RE.match(reporte_id):
-        logger.warning("fn_generar_pptx: reporte_id no es un UUID válido: %s", reporte_id)
+        logger.warning("fn_generar_pptx: reporte_id no es un UUID vÃ¡lido: %s", reporte_id)
         return func.HttpResponse(
-            json.dumps({"error": "reporte_id inválido"}),
+            json.dumps({"error": "reporte_id invÃ¡lido"}),
             status_code=400,
             mimetype="application/json",
         )
@@ -267,7 +267,7 @@ async def http_start(req: func.HttpRequest, starter: str, **kwargs) -> func.Http
 # ---------------------------------------------------------------------------
 
 def orchestrator(context: df.DurableOrchestrationContext):
-    """Coordinates: generate PPTX → upload to OneDrive → notify."""
+    """Coordinates: generate PPTX â upload to OneDrive â notify."""
     payload_data = context.get_input()
     reporte_id = payload_data.get("reporte_id")
 
@@ -388,11 +388,21 @@ def generate_pptx_activity(payload_data: dict) -> dict:
 def _update_sha256_dataverse(reporte_id: str, sha256: str) -> None:
     """Patch the SHA-256 field on the Dataverse record."""
     import httpx
-    from azure.identity import DefaultAzureCredential
+    from azure.identity import ManagedIdentityCredential, DefaultAzureCredential
 
-    cred = DefaultAzureCredential()
+    _mi_client_id = os.environ.get("MANAGED_IDENTITY_CLIENT_ID", "")
+
+    cred = (
+
+        ManagedIdentityCredential(client_id=_mi_client_id)
+
+        if _mi_client_id
+
+        else DefaultAzureCredential()
+
+    )
     dataverse_url = get_secret("DATAVERSE_URL")
-    token = cred.get_token(f"{dataverse_url.rstrip('/')}/.default").token  # FIX [C-2]: scope dinámico desde get_secret("DATAVERSE_URL")
+    token = cred.get_token(f"{dataverse_url.rstrip('/')}/.default").token  # FIX [C-2]: scope dinÃ¡mico desde get_secret("DATAVERSE_URL")
 
     httpx.patch(
         f"{dataverse_url}/api/data/v9.2/cr_multitelreportes"
@@ -424,7 +434,22 @@ def upload_files_activity(upload_input: dict) -> dict:
     pptx_path = upload_input["pptx_path"]
     pdf_path = upload_input["pdf_path"]
 
-    cred = DefaultAzureCredential()
+    _mi_client_id = os.environ.get("MANAGED_IDENTITY_CLIENT_ID", "")
+
+
+    cred = (
+
+
+        ManagedIdentityCredential(client_id=_mi_client_id)
+
+
+        if _mi_client_id
+
+
+        else DefaultAzureCredential()
+
+
+    )
     graph_token = cred.get_token("https://graph.microsoft.com/.default").token
     drive_id = get_secret("ONEDRIVE_DRIVE_ID")
     base_path = f"/Multitel/Reportes/{reporte_id}"
@@ -458,7 +483,7 @@ def upload_files_activity(upload_input: dict) -> dict:
         from azure.identity import DefaultAzureCredential as DAC
         cred2 = DAC()
         dv_url = get_secret("DATAVERSE_URL")
-        dv_token = cred2.get_token(f"{dv_url.rstrip('/')}/.default").token  # FIX [C-2]: scope dinámico desde get_secret("DATAVERSE_URL")
+        dv_token = cred2.get_token(f"{dv_url.rstrip('/')}/.default").token  # FIX [C-2]: scope dinÃ¡mico desde get_secret("DATAVERSE_URL")
         hx.patch(
             f"{dv_url}/api/data/v9.2/cr_multitelreportes"
             f"?$filter=cr_reporte_id eq '{reporte_id}'",
@@ -491,7 +516,22 @@ def notify_activity(notify_input: dict) -> None:
     pptx_url = notify_input.get("pptx_url", "")
     pdf_url = notify_input.get("pdf_url", "")
 
-    cred = DefaultAzureCredential()
+    _mi_client_id = os.environ.get("MANAGED_IDENTITY_CLIENT_ID", "")
+
+
+    cred = (
+
+
+        ManagedIdentityCredential(client_id=_mi_client_id)
+
+
+        if _mi_client_id
+
+
+        else DefaultAzureCredential()
+
+
+    )
     graph_token = cred.get_token("https://graph.microsoft.com/.default").token
     pa_webhook = get_secret("POWER_AUTOMATE_APPROVAL_WEBHOOK")
 
@@ -522,7 +562,7 @@ def notify_activity(notify_input: dict) -> None:
     except Exception as exc:
         logger.warning("email_notify_failed reporte_id=%s err=%s", reporte_id, exc)
 
-    # Power Automate webhook — triggers Teams card with Aprobar/Rechazar buttons
+    # Power Automate webhook â triggers Teams card with Aprobar/Rechazar buttons
     try:
         httpx.post(
             pa_webhook,
