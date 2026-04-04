@@ -6,7 +6,6 @@ import os
 import hashlib
 import base64
 import tempfile
-import subprocess
 import re
 from datetime import datetime, timezone
 from typing import Optional, List, Dict
@@ -52,45 +51,32 @@ CPE_SLOTS: Dict[str, dict] = {
 }
 
 # ---------------------------------------------------------------------------
-# RUN MERGING â CRITICAL: python-pptx splits {{Variable}} across multiple runs
+# RUN MERGING - CRITICAL: python-pptx splits {{Variable}} across multiple runs
 # ---------------------------------------------------------------------------
 
 def merge_runs_and_replace(paragraph, variables: dict) -> None:
-    """
-    Concatenate ALL runs of a paragraph, apply ALL variable replacements on
-    the full text, then put the result in run[0] and clear the rest.
-    Without this, {{Cliente}} split as {{ + Cliente + }} by pptx never matches.
-    """
     if not paragraph.runs:
         return
-
     full_text = "".join(run.text for run in paragraph.runs)
-
     replaced = False
     for key, value in variables.items():
         placeholder = f"{{{{{key}}}}}"
         if placeholder in full_text:
             full_text = full_text.replace(placeholder, str(value) if value is not None else "")
             replaced = True
-
     if replaced or any(f"{{{{{k}}}}}" in full_text for k in variables):
-        # Preserve formatting from first run, write merged text, clear rest
         paragraph.runs[0].text = full_text
         for run in paragraph.runs[1:]:
             run.text = ""
 
 
 def replace_all_variables(prs, variables: dict) -> None:
-    """Walk every paragraph in every shape in every slide and merge+replace."""
-    from pptx.util import Inches, Pt
     from pptx.enum.shapes import MSO_SHAPE_TYPE
-
     for slide in prs.slides:
         for shape in slide.shapes:
             if shape.has_text_frame:
                 for paragraph in shape.text_frame.paragraphs:
                     merge_runs_and_replace(paragraph, variables)
-            # Tables
             if shape.shape_type == MSO_SHAPE_TYPE.TABLE:
                 for row in shape.table.rows:
                     for cell in row.cells:
@@ -103,12 +89,7 @@ def replace_all_variables(prs, variables: dict) -> None:
 # ---------------------------------------------------------------------------
 
 def insert_photos(prs, fotos: list, tipo_reporte: str) -> None:
-    """
-    Insert stamped photos into the correct slide placeholder based on slot name
-    and report type.  foto["imagen_base64"] contains the ALREADY-STAMPED image
-    burned by the mobile app before upload.
-    """
-    from pptx.util import Inches, Emu
+    from pptx.util import Inches
     from PIL import Image
 
     slot_map = PLANTA_EXTERNA_SLOTS if tipo_reporte == "Planta Externa" else CPE_SLOTS
@@ -130,11 +111,7 @@ def insert_photos(prs, fotos: list, tipo_reporte: str) -> None:
         slide = prs.slides[slide_idx]
         img_bytes = base64.b64decode(imagen_b64)
 
-        # Find the correct picture placeholder by index
         target_ph = None
-        pic_phs = [sh for sh in slide.placeholders
-                   if sh.placeholder_format.idx not in (0, 1)]  # skip title/body
-        # Fallback: use positional index among picture placeholders
         picture_shapes = [sh for sh in slide.shapes
                           if hasattr(sh, "placeholder_format") and sh.placeholder_format is not None]
         if ph_idx < len(picture_shapes):
@@ -147,35 +124,27 @@ def insert_photos(prs, fotos: list, tipo_reporte: str) -> None:
                 top = target_ph.top
                 width = target_ph.width
                 height = target_ph.height
-                # Remove placeholder and add picture in its place
                 sp = target_ph._element
                 sp.getparent().remove(sp)
-                slide.shapes.add_picture(
-                    BytesIO(img_bytes), left, top, width, height
-                )
+                slide.shapes.add_picture(BytesIO(img_bytes), left, top, width, height)
             except Exception as exc:
                 logger.warning("photo_insert_failed slot=%s err=%s", slot_nombre, exc)
         else:
-            # No placeholder found â append to slide at default position
             try:
                 slide.shapes.add_picture(
-                    BytesIO(img_bytes),
-                    Inches(1), Inches(1), Inches(4), Inches(3)
+                    BytesIO(img_bytes), Inches(1), Inches(1), Inches(4), Inches(3)
                 )
             except Exception as exc:
                 logger.warning("photo_append_failed slot=%s err=%s", slot_nombre, exc)
 
 
 # ---------------------------------------------------------------------------
-# BUILD VARIABLE MAP from payload
+# BUILD VARIABLE MAP
 # ---------------------------------------------------------------------------
 
 def build_variable_map(payload: dict) -> dict:
-    """Map all 60+ template variables from the form payload."""
     pc = payload.get("patchcord_vars", {})
-    # Build PC01..PC28 defaults
     patchcord_map = {f"PC{i:02d}": pc.get(f"PC{i:02d}", "") for i in range(1, 29)}
-
     variables = {
         "Cliente":               payload.get("cliente", ""),
         "ID del Servicio":       payload.get("id_servicio", ""),
@@ -214,22 +183,134 @@ def build_variable_map(payload: dict) -> dict:
 
 
 # ---------------------------------------------------------------------------
-# DURABLE FUNCTION â HTTP STARTER
+# PDF CONVERSION - Python puro, sin LibreOffice
+# ---------------------------------------------------------------------------
+
+def convertir_pptx_a_pdf(pptx_bytes: bytes, reporte_id: str, tmp_dir: str) -> str:
+    """
+    Convierte PPTX a PDF usando reportlab + python-pptx.
+    Sin dependencias de sistema operativo. Compatible con Azure Flex Consumption.
+    """
+    from pptx import Presentation
+    from pptx.util import Pt
+    from reportlab.lib.pagesizes import letter
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.lib.units import inch
+    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Image as RLImage
+    from reportlab.lib import colors
+    import PIL.Image as PILImage
+
+    pdf_path = os.path.join(tmp_dir, f"reporte_{reporte_id}.pdf")
+    prs = Presentation(BytesIO(pptx_bytes))
+
+    doc = SimpleDocTemplate(
+        pdf_path,
+        pagesize=letter,
+        rightMargin=inch * 0.75,
+        leftMargin=inch * 0.75,
+        topMargin=inch * 0.75,
+        bottomMargin=inch * 0.75,
+    )
+
+    styles = getSampleStyleSheet()
+    title_style = ParagraphStyle(
+        "SlideTitle",
+        parent=styles["Heading1"],
+        fontSize=16,
+        spaceAfter=6,
+        textColor=colors.HexColor("#1F3864"),
+    )
+    body_style = ParagraphStyle(
+        "SlideBody",
+        parent=styles["Normal"],
+        fontSize=11,
+        spaceAfter=4,
+        leading=15,
+    )
+    separator_style = ParagraphStyle(
+        "Separator",
+        parent=styles["Normal"],
+        fontSize=8,
+        textColor=colors.HexColor("#AAAAAA"),
+        spaceAfter=10,
+    )
+
+    story = []
+    slide_number = 0
+
+    for slide in prs.slides:
+        slide_number += 1
+        has_content = False
+
+        for shape in slide.shapes:
+            if not shape.has_text_frame:
+                continue
+            for para in shape.text_frame.paragraphs:
+                text = para.text.strip()
+                if not text:
+                    continue
+                has_content = True
+                # Detectar si es titulo (primer parrafo del shape)
+                try:
+                    is_title = (
+                        shape.placeholder_format is not None and
+                        shape.placeholder_format.idx in (0, 1)
+                    )
+                except Exception:
+                    is_title = False
+
+                safe_text = (text
+                    .replace("&", "&amp;")
+                    .replace("<", "&lt;")
+                    .replace(">", "&gt;"))
+
+                if is_title:
+                    story.append(Paragraph(safe_text, title_style))
+                else:
+                    story.append(Paragraph(safe_text, body_style))
+
+            # Insertar imágenes del shape si las hay
+            try:
+                if shape.shape_type == 13:  # MSO_SHAPE_TYPE.PICTURE
+                    img_stream = BytesIO(shape.image.blob)
+                    pil_img = PILImage.open(img_stream)
+                    w, h = pil_img.size
+                    aspect = h / w
+                    max_w = 5 * inch
+                    img_w = min(max_w, w * 0.75)
+                    img_h = img_w * aspect
+                    img_stream.seek(0)
+                    story.append(RLImage(img_stream, width=img_w, height=img_h))
+                    story.append(Spacer(1, 6))
+            except Exception as exc:
+                logger.warning("pdf_image_skip slide=%d err=%s", slide_number, exc)
+
+        if has_content and slide_number < len(prs.slides):
+            story.append(Spacer(1, 12))
+            story.append(Paragraph("─" * 60, separator_style))
+            story.append(Spacer(1, 8))
+
+    if not story:
+        story.append(Paragraph("Reporte generado por Multitel", body_style))
+
+    doc.build(story)
+    logger.info("pdf_generated reporte_id=%s path=%s", reporte_id, pdf_path)
+    return pdf_path
+
+
+# ---------------------------------------------------------------------------
+# DURABLE FUNCTION - HTTP STARTER
 # ---------------------------------------------------------------------------
 
 @require_auth(required_roles=["Tecnico"])
 async def http_start(req: func.HttpRequest, starter: str, **kwargs) -> func.HttpResponse:
-    """
-    HTTP trigger â returns job_id IMMEDIATELY without blocking.
-    The heavy lifting runs asynchronously in the orchestrator.
-    """
     client = df.DurableOrchestrationClient(starter)
 
     try:
         body = req.get_json()
     except ValueError:
         return func.HttpResponse(
-            json.dumps({"error": "Payload JSON invÃ¡lido"}),
+            json.dumps({"error": "Payload JSON inválido"}),
             status_code=400,
             mimetype="application/json",
         )
@@ -242,24 +323,21 @@ async def http_start(req: func.HttpRequest, starter: str, **kwargs) -> func.Http
             mimetype="application/json",
         )
 
-    # FIX [A-2]: Validar reporte_id como UUID para prevenir OData injection
     _UUID_RE = re.compile(
         r'^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
         re.IGNORECASE
     )
     if not _UUID_RE.match(reporte_id):
-        logger.warning("fn_generar_pptx: reporte_id no es un UUID vÃ¡lido: %s", reporte_id)
+        logger.warning("fn_generar_pptx: reporte_id no es UUID válido: %s", reporte_id)
         return func.HttpResponse(
-            json.dumps({"error": "reporte_id invÃ¡lido"}),
+            json.dumps({"error": "reporte_id inválido"}),
             status_code=400,
             mimetype="application/json",
         )
 
     instance_id = await client.start_new("orchestrator", None, body)
     logger.info("durable_started reporte_id=%s instance=%s", reporte_id, instance_id)
-
-    response = client.create_check_status_response(req, instance_id)
-    return response
+    return client.create_check_status_response(req, instance_id)
 
 
 # ---------------------------------------------------------------------------
@@ -267,15 +345,11 @@ async def http_start(req: func.HttpRequest, starter: str, **kwargs) -> func.Http
 # ---------------------------------------------------------------------------
 
 def orchestrator(context: df.DurableOrchestrationContext):
-    """Coordinates: generate PPTX â upload to OneDrive â notify."""
     payload_data = context.get_input()
     reporte_id = payload_data.get("reporte_id")
 
     try:
-        # Step 1: Generate PPTX + PDF
         result = yield context.call_activity("generate_pptx_activity", payload_data)
-
-        # Step 2: Upload to OneDrive
         upload_input = {
             "reporte_id": reporte_id,
             "pptx_path": result["pptx_path"],
@@ -283,8 +357,6 @@ def orchestrator(context: df.DurableOrchestrationContext):
             "payload": payload_data.get("payload", {}),
         }
         upload_result = yield context.call_activity("upload_files_activity", upload_input)
-
-        # Step 3: Notify technician and supervisor
         notify_input = {
             "reporte_id": reporte_id,
             "tecnico_email": payload_data.get("payload", {}).get("tecnico_email", ""),
@@ -292,7 +364,6 @@ def orchestrator(context: df.DurableOrchestrationContext):
             "pdf_url": upload_result.get("pdf_url", ""),
         }
         yield context.call_activity("notify_activity", notify_input)
-
         return {"status": "completed", "reporte_id": reporte_id}
 
     except Exception as exc:
@@ -306,12 +377,12 @@ def orchestrator(context: df.DurableOrchestrationContext):
 
 def generate_pptx_activity(payload_data: dict) -> dict:
     """
-    1. Load template from Azure Blob Storage
-    2. Run merging + variable replacement
-    3. Insert stamped photos into correct slide slots
-    4. Save PPTX to temp dir
-    5. Convert to PDF via LibreOffice headless
-    6. Return paths to both files
+    1. Carga plantilla desde Azure Blob Storage
+    2. Reemplaza variables
+    3. Inserta fotos
+    4. Guarda PPTX
+    5. Convierte a PDF con reportlab (sin LibreOffice)
+    6. Retorna rutas de ambos archivos
     """
     from pptx import Presentation
     from azure.storage.blob import BlobServiceClient
@@ -320,7 +391,7 @@ def generate_pptx_activity(payload_data: dict) -> dict:
     payload = payload_data.get("payload", {})
     tipo_reporte = payload.get("tipo_reporte", "Planta Externa")
 
-    # ---- Load template from Blob Storage ----
+    # Cargar plantilla desde Blob Storage
     blob_conn = get_secret("AZURE_STORAGE_CONNECTION_STRING")
     template_container = get_secret("TEMPLATE_CONTAINER_NAME")
     template_name = (
@@ -328,55 +399,40 @@ def generate_pptx_activity(payload_data: dict) -> dict:
         if tipo_reporte == "Planta Externa"
         else "plantilla_cpe.pptx"
     )
-
     blob_client = BlobServiceClient.from_connection_string(blob_conn)
     container = blob_client.get_container_client(template_container)
     template_bytes = container.get_blob_client(template_name).download_blob().readall()
 
     prs = Presentation(BytesIO(template_bytes))
 
-    # ---- Step A: Run merging + variable replacement ----
+    # Reemplazar variables
     variables = build_variable_map(payload)
     replace_all_variables(prs, variables)
 
-    # ---- Step B: Insert photos into correct slide slots ----
+    # Insertar fotos
     fotos = payload.get("fotos", [])
     insert_photos(prs, fotos, tipo_reporte)
 
-    # ---- Step C: Save PPTX to temp directory ----
+    # Guardar PPTX
     tmp_dir = tempfile.mkdtemp(prefix=f"reporte_{reporte_id}_")
     pptx_path = os.path.join(tmp_dir, f"reporte_{reporte_id}.pptx")
     prs.save(pptx_path)
 
-    # ---- Step D: Compute SHA-256 of the generated PPTX ----
+    # SHA-256
     with open(pptx_path, "rb") as f:
         pptx_sha256 = hashlib.sha256(f.read()).hexdigest()
     logger.info("pptx_generated reporte_id=%s sha256=%s", reporte_id, pptx_sha256)
 
-    # Store SHA-256 in Dataverse (non-blocking update)
     try:
         _update_sha256_dataverse(reporte_id, pptx_sha256)
     except Exception as exc:
         logger.warning("sha256_update_failed reporte_id=%s err=%s", reporte_id, exc)
 
-    # ---- Step E: Convert PPTX to PDF via LibreOffice headless ----
-    pdf_path = pptx_path.replace(".pptx", ".pdf")
-    try:
-        subprocess.run(
-            ["libreoffice", "--headless", "--convert-to", "pdf",
-             "--outdir", tmp_dir, pptx_path],
-            check=True,
-            capture_output=True,
-            timeout=120,
-        )
-        if not os.path.exists(pdf_path):
-            raise FileNotFoundError(f"LibreOffice did not produce PDF at {pdf_path}")
-    except subprocess.TimeoutExpired:
-        logger.error("libreoffice_timeout reporte_id=%s", reporte_id)
-        raise
-    except subprocess.CalledProcessError as exc:
-        logger.error("libreoffice_failed reporte_id=%s stderr=%s", reporte_id, exc.stderr)
-        raise
+    # ---- CORRECCIÓN A-3: Convertir a PDF sin LibreOffice ----
+    with open(pptx_path, "rb") as f:
+        pptx_bytes = f.read()
+
+    pdf_path = convertir_pptx_a_pdf(pptx_bytes, reporte_id, tmp_dir)
 
     return {
         "pptx_path": pptx_path,
@@ -386,24 +442,17 @@ def generate_pptx_activity(payload_data: dict) -> dict:
 
 
 def _update_sha256_dataverse(reporte_id: str, sha256: str) -> None:
-    """Patch the SHA-256 field on the Dataverse record."""
     import httpx
     from azure.identity import ManagedIdentityCredential, DefaultAzureCredential
 
     _mi_client_id = os.environ.get("MANAGED_IDENTITY_CLIENT_ID", "")
-
     cred = (
-
         ManagedIdentityCredential(client_id=_mi_client_id)
-
         if _mi_client_id
-
         else DefaultAzureCredential()
-
     )
     dataverse_url = get_secret("DATAVERSE_URL")
-    token = cred.get_token(f"{dataverse_url.rstrip('/')}/.default").token  # FIX [C-2]: scope dinÃ¡mico desde get_secret("DATAVERSE_URL")
-
+    token = cred.get_token(f"{dataverse_url.rstrip('/')}/.default").token
     httpx.patch(
         f"{dataverse_url}/api/data/v9.2/cr_multitelreportes"
         f"?$filter=cr_reporte_id eq '{reporte_id}'",
@@ -419,36 +468,22 @@ def _update_sha256_dataverse(reporte_id: str, sha256: str) -> None:
 
 
 # ---------------------------------------------------------------------------
-# ACTIVITY: upload files (delegates to fn_subir_onedrive logic)
+# ACTIVITY: upload files
 # ---------------------------------------------------------------------------
 
 def upload_files_activity(upload_input: dict) -> dict:
-    """
-    Uploads PPTX + PDF to OneDrive via Microsoft Graph API.
-    Path: /Multitel/Reportes/{reporte_id}/reporte_{reporte_id}.pptx|.pdf
-    """
     import httpx
-    from azure.identity import DefaultAzureCredential
+    from azure.identity import ManagedIdentityCredential, DefaultAzureCredential
 
     reporte_id = upload_input["reporte_id"]
     pptx_path = upload_input["pptx_path"]
     pdf_path = upload_input["pdf_path"]
 
     _mi_client_id = os.environ.get("MANAGED_IDENTITY_CLIENT_ID", "")
-
-
     cred = (
-
-
         ManagedIdentityCredential(client_id=_mi_client_id)
-
-
         if _mi_client_id
-
-
         else DefaultAzureCredential()
-
-
     )
     graph_token = cred.get_token("https://graph.microsoft.com/.default").token
     drive_id = get_secret("ONEDRIVE_DRIVE_ID")
@@ -458,7 +493,6 @@ def upload_files_activity(upload_input: dict) -> dict:
     def upload_file(local_path: str, remote_name: str) -> str:
         with open(local_path, "rb") as f:
             content = f.read()
-
         url = (
             f"https://graph.microsoft.com/v1.0/drives/{drive_id}"
             f"/root:{base_path}/{remote_name}:/content"
@@ -474,16 +508,14 @@ def upload_files_activity(upload_input: dict) -> dict:
 
     pptx_url = upload_file(pptx_path, f"reporte_{reporte_id}.pptx")
     pdf_url = upload_file(pdf_path, f"reporte_{reporte_id}.pdf")
-
     logger.info("files_uploaded reporte_id=%s pptx=%s pdf=%s", reporte_id, pptx_url, pdf_url)
 
-    # Update URLs in Dataverse
     try:
         import httpx as hx
         from azure.identity import DefaultAzureCredential as DAC
         cred2 = DAC()
         dv_url = get_secret("DATAVERSE_URL")
-        dv_token = cred2.get_token(f"{dv_url.rstrip('/')}/.default").token  # FIX [C-2]: scope dinÃ¡mico desde get_secret("DATAVERSE_URL")
+        dv_token = cred2.get_token(f"{dv_url.rstrip('/')}/.default").token
         hx.patch(
             f"{dv_url}/api/data/v9.2/cr_multitelreportes"
             f"?$filter=cr_reporte_id eq '{reporte_id}'",
@@ -507,9 +539,8 @@ def upload_files_activity(upload_input: dict) -> dict:
 # ---------------------------------------------------------------------------
 
 def notify_activity(notify_input: dict) -> None:
-    """Send push notification to technician + Teams card to supervisor."""
     import httpx
-    from azure.identity import DefaultAzureCredential
+    from azure.identity import ManagedIdentityCredential, DefaultAzureCredential
 
     reporte_id = notify_input.get("reporte_id", "")
     tecnico_email = notify_input.get("tecnico_email", "")
@@ -517,25 +548,14 @@ def notify_activity(notify_input: dict) -> None:
     pdf_url = notify_input.get("pdf_url", "")
 
     _mi_client_id = os.environ.get("MANAGED_IDENTITY_CLIENT_ID", "")
-
-
     cred = (
-
-
         ManagedIdentityCredential(client_id=_mi_client_id)
-
-
         if _mi_client_id
-
-
         else DefaultAzureCredential()
-
-
     )
     graph_token = cred.get_token("https://graph.microsoft.com/.default").token
     pa_webhook = get_secret("POWER_AUTOMATE_APPROVAL_WEBHOOK")
 
-    # Graph API push notification to technician
     try:
         httpx.post(
             f"https://graph.microsoft.com/v1.0/users/{tecnico_email}/sendMail",
@@ -562,7 +582,6 @@ def notify_activity(notify_input: dict) -> None:
     except Exception as exc:
         logger.warning("email_notify_failed reporte_id=%s err=%s", reporte_id, exc)
 
-    # Power Automate webhook â triggers Teams card with Aprobar/Rechazar buttons
     try:
         httpx.post(
             pa_webhook,
