@@ -5,14 +5,14 @@
  * Token stored in Android Keystore via expo-secure-store. NEVER AsyncStorage.
  */
 import React, { useEffect, useState, useCallback } from 'react';
-import { StatusBar, Platform, Alert } from 'react-native';
+import { StatusBar } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
-import { PublicClientApplication } from '@azure/msal-react-native';
+import MSALClient, { MSALInteractiveParams, MSALSilentParams } from 'react-native-msal';
 import * as SecureStore from 'expo-secure-store';
 import * as SplashScreen from 'expo-splash-screen';
+import Constants from 'expo-constants';
 
-import { msalConfig } from './src/auth/msalConfig';
 import LoginScreen from './src/screens/LoginScreen';
 import DashboardScreen from './src/screens/DashboardScreen';
 import FormularioScreen from './src/screens/FormularioScreen';
@@ -40,9 +40,19 @@ const Stack = createNativeStackNavigator<RootStackParamList>();
 SplashScreen.preventAutoHideAsync().catch(() => {});
 
 // ---------------------------------------------------------------------------
-// MSAL singleton
+// MSAL config from EAS extra (never EXPO_PUBLIC_)
 // ---------------------------------------------------------------------------
-export const msalInstance = new PublicClientApplication(msalConfig);
+const extra = Constants.expoConfig?.extra ?? {};
+const tenantId = extra.azureTenantId ?? '';
+const clientId = extra.azureClientId ?? '';
+
+export const msalInstance = new MSALClient({
+  auth: {
+    clientId,
+    authority: `https://login.microsoftonline.com/${tenantId}`,
+    redirectUri: 'msauth://com.multitel.reportes/callback',
+  },
+});
 
 // ---------------------------------------------------------------------------
 // App
@@ -57,8 +67,6 @@ export default function App() {
 
   const initializeAuth = async () => {
     try {
-      await msalInstance.initialize();
-
       // Check for valid cached token in Android Keystore
       const cachedToken = await SecureStore.getItemAsync('msal_access_token');
       const tokenExpiry = await SecureStore.getItemAsync('msal_token_expiry');
@@ -67,10 +75,8 @@ export default function App() {
         const expiryTime = parseInt(tokenExpiry, 10);
         const now = Date.now();
         if (now < expiryTime - 60_000) {
-          // Token still valid (with 60s buffer)
           setIsAuthenticated(true);
         } else {
-          // Try silent token refresh
           const refreshed = await silentRefresh();
           setIsAuthenticated(refreshed);
         }
@@ -87,18 +93,19 @@ export default function App() {
 
   const silentRefresh = async (): Promise<boolean> => {
     try {
-      const accounts = await msalInstance.getAllAccounts();
-      if (accounts.length === 0) return false;
+      const accounts = await msalInstance.getAccounts();
+      if (!accounts || accounts.length === 0) return false;
 
-      const result = await msalInstance.acquireTokenSilent({
+      const params: MSALSilentParams = {
         scopes: ['User.Read', 'offline_access'],
         account: accounts[0],
-      });
+        forceRefresh: false,
+      };
 
+      const result = await msalInstance.acquireTokenSilent(params);
       if (result?.accessToken) {
-        // Store in Android Keystore via expo-secure-store
         await SecureStore.setItemAsync('msal_access_token', result.accessToken);
-        const expiry = (result.expiresOn?.getTime() ?? Date.now() + 3600_000).toString();
+        const expiry = (result.expiresOn ?? Date.now() + 3600_000).toString();
         await SecureStore.setItemAsync('msal_token_expiry', expiry);
         return true;
       }
@@ -115,7 +122,7 @@ export default function App() {
   }, [appIsReady]);
 
   if (!appIsReady || isAuthenticated === null) {
-    return null; // Splash screen is still showing
+    return null;
   }
 
   return (
