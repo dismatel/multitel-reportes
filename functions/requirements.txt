@@ -7,8 +7,8 @@ azure-storage-blob==12.23.0
 azure-keyvault-secrets==4.8.0
 
 # Durable Functions — REQUIRED for fn_generar_pptx orchestration
-# FIX: versión 1.2.4 no existe en PyPI — corregido a 1.2.3
-azure-durable-functions==1.2.3
+# FIX: única versión estable disponible en PyPI
+azure-durable-functions==1.2.2
 
 # Microsoft Graph / MSAL
 # FIX: Se elimina python-jose (CVE-2024-33663, bypass de firma JWT)
