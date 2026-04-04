@@ -18,9 +18,19 @@ def _write_audit_log(
     """Write audit entry to SharePoint via Graph API."""
     try:
         import httpx
-        from azure.identity import DefaultAzureCredential
+        from azure.identity import ManagedIdentityCredential, DefaultAzureCredential
 
-        cred = DefaultAzureCredential()
+        _mi_client_id = os.environ.get("MANAGED_IDENTITY_CLIENT_ID", "")
+
+        cred = (
+
+            ManagedIdentityCredential(client_id=_mi_client_id)
+
+            if _mi_client_id
+
+            else DefaultAzureCredential()
+
+        )
         graph_token = cred.get_token("https://graph.microsoft.com/.default").token
         sharepoint_site_id = get_secret("SHAREPOINT_SITE_ID")
         audit_list_id = get_secret("SHAREPOINT_AUDIT_LIST_ID")
@@ -125,13 +135,13 @@ def _send_teams_approval_card(
 def main(req: func.HttpRequest, **kwargs) -> func.HttpResponse:
     """
     POST /api/notificar
-    Internal endpoint — called by fn_generar_pptx orchestrator after files
+    Internal endpoint â called by fn_generar_pptx orchestrator after files
     are uploaded to OneDrive.  No user-facing RBAC (sistema call), but
     validates a shared function key from Key Vault.
 
     Body: { reporte_id, tecnico_email, pptx_url, pdf_url }
     """
-    # Validate internal function key (not Azure AD — this is a system-to-system call)
+    # Validate internal function key (not Azure AD â this is a system-to-system call)
     expected_key = get_secret("FN_NOTIFICAR_KEY")
     provided_key = req.headers.get("x-functions-key", "")
     if provided_key != expected_key:
@@ -146,7 +156,7 @@ def main(req: func.HttpRequest, **kwargs) -> func.HttpResponse:
         body = req.get_json()
     except ValueError:
         return func.HttpResponse(
-            json.dumps({"error": "Payload JSON inválido"}),
+            json.dumps({"error": "Payload JSON invÃ¡lido"}),
             status_code=400,
             mimetype="application/json",
         )
@@ -163,8 +173,13 @@ def main(req: func.HttpRequest, **kwargs) -> func.HttpResponse:
             mimetype="application/json",
         )
 
-    from azure.identity import DefaultAzureCredential
-    cred = DefaultAzureCredential()
+    from azure.identity import ManagedIdentityCredential, DefaultAzureCredential
+    _mi_client_id = os.environ.get("MANAGED_IDENTITY_CLIENT_ID", "")
+    cred = (
+        ManagedIdentityCredential(client_id=_mi_client_id)
+        if _mi_client_id
+        else DefaultAzureCredential()
+    )
     graph_token = cred.get_token("https://graph.microsoft.com/.default").token
 
     errors = []
