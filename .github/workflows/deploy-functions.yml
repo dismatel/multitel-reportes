@@ -9,7 +9,7 @@ on:
     branches: [main]
     paths:
       - 'functions/**'
-      - 'requirements.txt'
+      - 'functions/requirements.txt'
       - '.github/workflows/deploy-functions.yml'
   workflow_dispatch:
     inputs:
@@ -22,7 +22,7 @@ on:
 
 env:
   AZURE_FUNCTIONAPP_NAME: multitel-functions
-  AZURE_FUNCTIONAPP_PACKAGE_PATH: '.'
+  AZURE_FUNCTIONAPP_PACKAGE_PATH: './functions'
   PYTHON_VERSION: '3.11'
 
 jobs:
@@ -49,7 +49,7 @@ jobs:
         run: |
           python --version
           pip install --upgrade pip
-          pip install -r requirements.txt --dry-run
+          pip install -r functions/requirements.txt --dry-run
 
       - name: Desplegar Azure Functions via Service Principal
         uses: azure/functions-action@v1
