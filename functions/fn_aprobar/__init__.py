@@ -1,6 +1,6 @@
 """
 functions/fn_aprobar/__init__.py
-Approval/rejection function — RBAC: Supervisor only.
+Approval/rejection function â RBAC: Supervisor only.
 Called from Power Automate when supervisor clicks Aprobar/Rechazar in Teams.
 """
 import json
@@ -12,9 +12,9 @@ from datetime import datetime, timezone
 import azure.functions as func
 import requests
 
-# FIX [CRÍTICO-5]: Import absoluto corregido a relativo.
+# FIX [CRÃTICO-5]: Import absoluto corregido a relativo.
 # El import absoluto (from shared.auth) fallaba con ModuleNotFoundError
-# porque Python no encuentra 'shared' como módulo top-level dentro del paquete.
+# porque Python no encuentra 'shared' como mÃ³dulo top-level dentro del paquete.
 # El import relativo (from ..shared.auth) es correcto para la estructura de carpetas.
 from ..shared.auth import require_auth
 
@@ -51,9 +51,9 @@ def main(req: func.HttpRequest, **kwargs) -> func.HttpResponse:
         re.IGNORECASE
     )
     if not _UUID_RE.match(reporte_id):
-        logger.warning("fn_aprobar: reporte_id no es un UUID válido: %s", reporte_id)
+        logger.warning("fn_aprobar: reporte_id no es un UUID vÃ¡lido: %s", reporte_id)
         return func.HttpResponse(
-            json.dumps({"error": "reporte_id inválido"}),
+            json.dumps({"error": "reporte_id invÃ¡lido"}),
             status_code=400,
             mimetype="application/json",
         )
@@ -61,9 +61,9 @@ def main(req: func.HttpRequest, **kwargs) -> func.HttpResponse:
     try:
                 body = req.get_json()
 except ValueError:
-            logger.error("fn_aprobar: body JSON inválido")
+            logger.error("fn_aprobar: body JSON invÃ¡lido")
             return func.HttpResponse(
-                json.dumps({"error": "Body JSON inválido"}),
+                json.dumps({"error": "Body JSON invÃ¡lido"}),
                 status_code=400,
                 mimetype="application/json",
             )
@@ -78,16 +78,21 @@ except ValueError:
                                 mimetype="application/json",
                 )
 
-    # ── 1. Actualizar estado en Dataverse ────────────────────────────────────
+    # ââ 1. Actualizar estado en Dataverse ââââââââââââââââââââââââââââââââââââ
     nuevo_estado = "aprobado" if accion == "aprobar" else "rechazado"
     dataverse_patch_url = (
                 f"{DATAVERSE_URL}/api/data/v9.2/multitel_reportes({reporte_id})"
     )
 
     try:
-                from azure.identity import DefaultAzureCredential
-                cred = DefaultAzureCredential()
-                dv_token = cred.get_token(f"{DATAVERSE_URL.rstrip('/')}/.default").token  # FIX [C-2]: scope dinámico desde DATAVERSE_URL env var
+                from azure.identity import ManagedIdentityCredential, DefaultAzureCredential
+                _mi_client_id = os.environ.get("MANAGED_IDENTITY_CLIENT_ID", "")
+                cred = (
+                    ManagedIdentityCredential(client_id=_mi_client_id)
+                    if _mi_client_id
+                    else DefaultAzureCredential()
+                )
+                dv_token = cred.get_token(f"{DATAVERSE_URL.rstrip('/')}/.default").token  # FIX [C-2]: scope dinÃ¡mico desde DATAVERSE_URL env var
 
         patch_payload = {
                         "multitel_estado": nuevo_estado,
@@ -113,21 +118,21 @@ except ValueError:
                         reporte_id, nuevo_estado, supervisor_upn,
         )
 except Exception as exc:
-        logger.exception("fn_aprobar: error al actualizar Dataverse — %s", exc)
+        logger.exception("fn_aprobar: error al actualizar Dataverse â %s", exc)
         return func.HttpResponse(
                         json.dumps({"error": "Error al actualizar estado en Dataverse", "detail": str(exc)}),
                         status_code=502,
                         mimetype="application/json",
         )
 
-    # ── 2. Notificar al técnico vía Graph API (Teams chat) ───────────────────
+    # ââ 2. Notificar al tÃ©cnico vÃ­a Graph API (Teams chat) âââââââââââââââââââ
     # NOTA: Teams Incoming Webhook (outlook.office.com) fue deprecado en ene-2025.
-    # Aquí usamos Graph API directamente para enviar un mensaje al técnico.
-    # Ver también fn_notificar para la lógica completa de notificaciones.
+    # AquÃ­ usamos Graph API directamente para enviar un mensaje al tÃ©cnico.
+    # Ver tambiÃ©n fn_notificar para la lÃ³gica completa de notificaciones.
     try:
                 graph_token = cred.get_token("https://graph.microsoft.com/.default").token
 
-        emoji = "✅" if accion == "aprobar" else "❌"
+        emoji = "â" if accion == "aprobar" else "â"
         mensaje = (
                         f"{emoji} Reporte **{reporte_id}** ha sido **{nuevo_estado}** "
                         f"por {supervisor_name}."
@@ -135,7 +140,7 @@ except Exception as exc:
         if comentario:
                         mensaje += f"\n\n> {comentario}"
 
-        # Obtener el UPN del técnico desde Dataverse para enviarle el mensaje
+        # Obtener el UPN del tÃ©cnico desde Dataverse para enviarle el mensaje
         get_url = f"{DATAVERSE_URL}/api/data/v9.2/multitel_reportes({reporte_id})?$select=multitel_tecnico_upn"
         get_resp = requests.get(
                         get_url,
@@ -145,7 +150,7 @@ except Exception as exc:
         tecnico_upn = get_resp.json().get("multitel_tecnico_upn", "") if get_resp.ok else ""
 
         if tecnico_upn:
-                        # Crear chat 1:1 o enviar a canal Teams si está configurado
+                        # Crear chat 1:1 o enviar a canal Teams si estÃ¡ configurado
                         teams_channel_id = os.environ.get("TEAMS_CHANNEL_ID", "")
                         teams_team_id = os.environ.get("TEAMS_TEAM_ID", "")
 
@@ -164,15 +169,15 @@ except Exception as exc:
                                 )
                                 if not graph_resp.ok:
                                                         logger.warning(
-                                                                                    "fn_aprobar: no se pudo enviar notificación Teams — %s",
+                                                                                    "fn_aprobar: no se pudo enviar notificaciÃ³n Teams â %s",
                                                                                     graph_resp.text,
                                                         )
             else:
-                logger.info("fn_aprobar: TEAMS_TEAM_ID o TEAMS_CHANNEL_ID no configurados, omitiendo notificación")
+                logger.info("fn_aprobar: TEAMS_TEAM_ID o TEAMS_CHANNEL_ID no configurados, omitiendo notificaciÃ³n")
 
 except Exception as exc:
-        # La notificación es best-effort; no falla el flujo principal
-        logger.warning("fn_aprobar: error en notificación Teams (non-fatal) — %s", exc)
+        # La notificaciÃ³n es best-effort; no falla el flujo principal
+        logger.warning("fn_aprobar: error en notificaciÃ³n Teams (non-fatal) â %s", exc)
 
     return func.HttpResponse(
                 json.dumps({
