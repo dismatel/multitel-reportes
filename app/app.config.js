@@ -1,6 +1,54 @@
 // app.config.js
-// Reemplaza app.json — NO importar módulos nativos aquí.
-// Este archivo se ejecuta en Node.js puro durante `expo config` y EAS build.
+// NO usar plugin react-native-msal — causa TypeError en expo config
+// El redirect URI de MSAL se configura via withAndroidManifest directamente
+
+const { withAndroidManifest } = require('@expo/config-plugins');
+
+// Plugin manual para agregar el redirect URI de MSAL al AndroidManifest
+// sin cargar react-native-msal (que importa @azure/msal-browser incompatible con Node CJS)
+const withMsalRedirectUri = (config) => {
+  return withAndroidManifest(config, (config) => {
+    const manifest = config.modResults;
+    const app = manifest.manifest.application[0];
+
+    if (!app.activity) app.activity = [];
+
+    // Verificar si ya existe la actividad de MSAL
+    const msalActivity = 'com.microsoft.identity.client.BrowserTabActivity';
+    const exists = app.activity.some(
+      (a) => a.$?.['android:name'] === msalActivity
+    );
+
+    if (!exists) {
+      app.activity.push({
+        $: {
+          'android:name': msalActivity,
+          'android:exported': 'true',
+        },
+        'intent-filter': [
+          {
+            action: [{ $: { 'android:name': 'android.intent.action.VIEW' } }],
+            category: [
+              { $: { 'android:name': 'android.intent.category.DEFAULT' } },
+              { $: { 'android:name': 'android.intent.category.BROWSABLE' } },
+            ],
+            data: [
+              {
+                $: {
+                  'android:scheme': 'msauth',
+                  'android:host': 'com.multitel.reportes',
+                  'android:path': '/callback',
+                },
+              },
+            ],
+          },
+        ],
+      });
+    }
+
+    return config;
+  });
+};
 
 module.exports = {
   expo: {
@@ -60,12 +108,7 @@ module.exports = {
             "Allow $(PRODUCT_NAME) to access your Face ID biometric data.",
         },
       ],
-      [
-        "react-native-msal",
-        {
-          androidRedirectUri: "msauth://com.multitel.reportes/callback",
-        },
-      ],
+      withMsalRedirectUri,  // Plugin manual — NO carga @azure/msal-browser
     ],
     extra: {
       eas: {
