@@ -24,6 +24,8 @@ jobs:
   build:
     name: EAS Build Android
     runs-on: ubuntu-latest
+    env:
+      NODE_OPTIONS: "--max-old-space-size=4096"
 
     steps:
       - name: Checkout codigo
@@ -39,7 +41,7 @@ jobs:
         run: npm install --legacy-peer-deps
 
       - name: Instalar EAS CLI
-        run: npm install -g eas-cli
+        run: npm install -g eas-cli@18.5.0
 
       - name: Restaurar keystore desde secret
         run: |
