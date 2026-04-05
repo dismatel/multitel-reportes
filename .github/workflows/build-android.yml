@@ -16,9 +16,9 @@ on:
       profile:
         description: 'EAS build profile'
         required: true
-        default: 'production'
+        default: 'preview'
         type: choice
-        options: [production, preview, development]
+        options: [preview, development, production]
 
 jobs:
   build:
@@ -68,7 +68,7 @@ jobs:
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
         run: |
-          eas build --platform android --profile production --non-interactive --local \
+          eas build --platform android --profile preview --non-interactive --local \
             --output ../multitel-reportes.apk
 
       - name: Limpiar keystore y credenciales
