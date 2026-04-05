@@ -4,7 +4,7 @@
  * Sets up MSAL, navigation and auth guard.
  * Token stored in Android Keystore via expo-secure-store. NEVER AsyncStorage.
  */
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { StatusBar } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
@@ -39,26 +39,22 @@ const Stack = createNativeStackNavigator<RootStackParamList>();
 SplashScreen.preventAutoHideAsync().catch(() => {});
 
 // ---------------------------------------------------------------------------
-// MSAL config from EAS extra (never EXPO_PUBLIC_)
-// ---------------------------------------------------------------------------
-const extra = Constants.expoConfig?.extra ?? {};
-const tenantId = extra.azureTenantId ?? '';
-const clientId = extra.azureClientId ?? '';
-
-export const msalInstance = new MSALClient({
-  auth: {
-    clientId,
-    authority: `https://login.microsoftonline.com/${tenantId}`,
-    redirectUri: 'msauth://com.multitel.reportes/callback',
-  },
-});
-
-// ---------------------------------------------------------------------------
 // App
 // ---------------------------------------------------------------------------
 export default function App() {
   const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null);
   const [appIsReady, setAppIsReady] = useState(false);
+
+  // MSAL inicializado dentro del componente para evitar
+  // que npx expo config falle al leer el módulo nativo
+  const extra = Constants.expoConfig?.extra ?? {};
+  const msalInstance = useRef(new MSALClient({
+    auth: {
+      clientId: extra.azureClientId ?? '',
+      authority: `https://login.microsoftonline.com/${extra.azureTenantId ?? ''}`,
+      redirectUri: 'msauth://com.multitel.reportes/callback',
+    },
+  })).current;
 
   useEffect(() => {
     initializeAuth();
