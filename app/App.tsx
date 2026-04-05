@@ -45,8 +45,6 @@ export default function App() {
   const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null);
   const [appIsReady, setAppIsReady] = useState(false);
 
-  // MSAL inicializado dentro del componente para evitar
-  // que npx expo config falle al leer el módulo nativo
   const extra = Constants.expoConfig?.extra ?? {};
   const msalInstance = useRef(new MSALClient({
     auth: {
@@ -55,6 +53,16 @@ export default function App() {
       redirectUri: 'msauth://com.multitel.reportes/callback',
     },
   })).current;
+
+  // ✅ Ref para evitar inicializar MSAL más de una vez
+  const msalInitialized = useRef(false);
+
+  const ensureInitialized = async (): Promise<void> => {
+    if (!msalInitialized.current) {
+      await msalInstance.init();
+      msalInitialized.current = true;
+    }
+  };
 
   useEffect(() => {
     initializeAuth();
@@ -87,6 +95,9 @@ export default function App() {
 
   const silentRefresh = async (): Promise<boolean> => {
     try {
+      // ✅ Inicializar MSAL antes de cualquier operación
+      await ensureInitialized();
+
       const accounts = await msalInstance.getAccounts();
       if (!accounts || accounts.length === 0) return false;
 
@@ -98,7 +109,7 @@ export default function App() {
 
       if (result?.accessToken) {
         await SecureStore.setItemAsync('msal_access_token', result.accessToken);
-        const expiry = (result.expiresOn ?? Date.now() + 3600_000).toString();
+        const expiry = (result.expiresOn ?? Date.now() + 3_600_000).toString();
         await SecureStore.setItemAsync('msal_token_expiry', expiry);
         return true;
       }
