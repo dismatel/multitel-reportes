@@ -8,7 +8,7 @@ import React, { useEffect, useState, useCallback } from 'react';
 import { StatusBar } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
-import MSALClient, { MSALInteractiveParams, MSALSilentParams } from 'react-native-msal';
+import MSALClient from 'react-native-msal';
 import * as SecureStore from 'expo-secure-store';
 import * as SplashScreen from 'expo-splash-screen';
 import Constants from 'expo-constants';
@@ -36,7 +36,6 @@ export type RootStackParamList = {
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
-// Keep splash screen visible until auth check completes
 SplashScreen.preventAutoHideAsync().catch(() => {});
 
 // ---------------------------------------------------------------------------
@@ -67,7 +66,6 @@ export default function App() {
 
   const initializeAuth = async () => {
     try {
-      // Check for valid cached token in Android Keystore
       const cachedToken = await SecureStore.getItemAsync('msal_access_token');
       const tokenExpiry = await SecureStore.getItemAsync('msal_token_expiry');
 
@@ -96,13 +94,12 @@ export default function App() {
       const accounts = await msalInstance.getAccounts();
       if (!accounts || accounts.length === 0) return false;
 
-      const params: MSALSilentParams = {
+      const result = await msalInstance.acquireTokenSilent({
         scopes: ['User.Read', 'offline_access'],
         account: accounts[0],
         forceRefresh: false,
-      };
+      });
 
-      const result = await msalInstance.acquireTokenSilent(params);
       if (result?.accessToken) {
         await SecureStore.setItemAsync('msal_access_token', result.accessToken);
         const expiry = (result.expiresOn ?? Date.now() + 3600_000).toString();
